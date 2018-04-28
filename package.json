@@ -1,0 +1,16 @@
+{
+  "name": "public-transport",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "axios": "^0.18.0",
+    "dotenv": "^5.0.1",
+    "express": "^4.16.3",
+    "gtfs-realtime-bindings": "0.0.4",
+    "knex": "^0.14.6",
+    "mysql": "^2.15.0"
+  },
+  "devDependencies": {},
+  "author": "Avin Mathew",
+  "license": "MIT"
+}

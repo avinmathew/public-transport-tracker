@@ -1,0 +1,9 @@
+TRUNCATE TABLE stop_times;
+
+TRUNCATE TABLE trips;
+
+TRUNCATE TABLE stops;
+
+TRUNCATE TABLE shapes;
+
+TRUNCATE TABLE routes;
