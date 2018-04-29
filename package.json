@@ -2,6 +2,9 @@
   "name": "public-transport",
   "version": "1.0.0",
   "main": "index.js",
+  "scripts": {
+    "prepare": "cleancss -o public/style.min.css src/style.css && uglifyjs --compress -o public/app.min.js -- src/app.js"
+  },
   "dependencies": {
     "axios": "^0.18.0",
     "dotenv": "^5.0.1",
@@ -10,7 +13,10 @@
     "knex": "^0.14.6",
     "mysql": "^2.15.0"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "clean-css-cli": "^4.1.11",
+    "uglifyjs": "^2.4.11"
+  },
   "author": "Avin Mathew",
   "license": "MIT"
 }
