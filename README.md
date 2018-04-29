@@ -12,8 +12,6 @@ See `db` for SQL scripts to create tables, insert data (MySQL scripts for bulk l
 
 Note: drop indexes before bulk loading data.
 
-###
-
 ## Environment variables
 
 Environment variables can either be supplied via command line or put in a `.env` file.
