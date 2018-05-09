@@ -3,6 +3,11 @@ require("dotenv").config();
 const express = require("express");
 const GtfsRealtimeBindings = require("gtfs-realtime-bindings");
 const axios = require("axios");
+const turf = {
+  point: require("@turf/helpers").point,
+  polygon: require("@turf/helpers").polygon,
+  booleanPointInPolygon: require("@turf/boolean-point-in-polygon").default
+};
 
 const URL = process.env.GTFS_REALTIME_URL;
 const MAX_ROUTE_COUNT = 10; // Max number of routes before we ignore querying the database
@@ -29,6 +34,17 @@ app.get("/feed", async (req, res) => {
     if (req.query.routes) {
       routes = req.query.routes.split(",");
     }
+    if (!req.query.neLat || !req.query.neLng || !req.query.swLat || !req.query.swLng) {
+      res.status(400);
+      return res.send("Unspecified boundary parameters");
+    }
+    const bounds = turf.polygon([[
+      [req.query.neLng, req.query.neLat],
+      [req.query.neLng, req.query.swLat],
+      [req.query.swLng, req.query.swLat],
+      [req.query.swLng, req.query.neLat],
+      [req.query.neLng, req.query.neLat],
+    ]]);
 
     const response = await axios.get(URL, { responseType: "arraybuffer" });
     const feed = GtfsRealtimeBindings.FeedMessage.decode(response.data);
@@ -69,14 +85,22 @@ app.get("/feed", async (req, res) => {
         return;
       }
 
+      // Ignore vehicles outside specified map bounds
+      const latitude = v.vehicle.position.latitude;
+      const longitude = v.vehicle.position.longitude;
+      const point = turf.point([longitude, latitude]);
+      if (!turf.booleanPointInPolygon(point, bounds)) {
+        return;
+      }
+
       entities[v.vehicle.trip.trip_id] = entities[v.vehicle.trip.trip_id] || {};
       entities[v.vehicle.trip.trip_id] = {
         ...entities[v.vehicle.trip.trip_id],
         id: v.id,
         tripId: v.vehicle.trip.trip_id,
         route: route,
-        latitude: v.vehicle.position.latitude,
-        longitude: v.vehicle.position.longitude
+        latitude: latitude,
+        longitude: longitude
       }
     });
 

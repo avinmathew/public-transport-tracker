@@ -36,6 +36,7 @@ map.on("moveend", function (e) {
     z: map.getZoom()
   });
   window.history.pushState("", "", url.toString());
+  getFeed();
 });
 
 var googleMaps = L.gridLayer.googleMutant({
@@ -116,11 +117,19 @@ function getFeed() {
 
   spinner.spin($refresh);
   var feedUrl = URI("feed");
+  var bounds = map.getBounds();
+  feedUrl = feedUrl.addSearch("neLat", bounds.getNorthEast().lat.toFixed(6));
+  feedUrl = feedUrl.addSearch("neLng", bounds.getNorthEast().lng.toFixed(6));
+  feedUrl = feedUrl.addSearch("swLat", bounds.getSouthWest().lat.toFixed(6));
+  feedUrl = feedUrl.addSearch("swLng", bounds.getSouthWest().lng.toFixed(6));
   if (search.routes) {
     feedUrl = feedUrl.addSearch("routes", search.routes);
   }
   return fetch(feedUrl.toString())
     .then(function (response) {
+      if (response.status !== 200) {
+        return;
+      }
       return response.json().then(function (entities) {
         entities.forEach(function (e) {
           var marker = vehicleLayerLookup[e.id];
@@ -168,6 +177,7 @@ function getFeed() {
         var layersToRemove = layerIds.filter(function (l) { return !entityIds.includes(l); });
         layersToRemove.forEach(function (l) {
           vehicleLayerLookup[l].remove();
+          delete vehicleLayerLookup[l];
         });
 
         spinner.stop();
