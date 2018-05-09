@@ -2,7 +2,7 @@
 
 Displays vehicle data from a [GTFS (General Transit Feed Specification) Realtime](https://developers.google.com/transit/gtfs-realtime/) feed on a map. The map uses a Google Maps basemap with the traffic layer turned on.
 
-Uses [GTFS Static](https://developers.google.com/transit/gtfs/) data to approximate positions to allow moving markers. GTFS Static data must be first stored in a database, while the Realtime data can be queried directly from an API provided by the transit provider.
+Uses [GTFS Static](https://developers.google.com/transit/gtfs/) to provide vehicle type and direction data. GTFS Static data must be first stored in a database, while the Realtime data can be queried directly from an API provided by the transit provider.
 
 The application has only been tested with the [Translink South East QLD feed](https://gtfsrt.api.translink.com.au/).
 
