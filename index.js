@@ -131,7 +131,8 @@ app.get("/feed", async (req, res) => {
     res.json(entities);
   } catch(err) {
     console.error(err);
-    res.json([]);
+    res.status(500);
+    res.json(err);
   }
 });
 
