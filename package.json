@@ -3,7 +3,11 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "prepare": "cleancss -o public/style.min.css src/style.css && uglifyjs --compress -o public/app.min.js -- src/app.js"
+    "prepare": "cleancss -o public/style.min.css src/style.css && uglifyjs --compress -o public/app.min.js -- src/app.js",
+    "watch": "npm-watch"
+  },
+  "watch": {
+    "prepare": "src/*.*"
   },
   "dependencies": {
     "@turf/boolean-point-in-polygon": "^6.0.1",
@@ -17,6 +21,7 @@
   },
   "devDependencies": {
     "clean-css-cli": "^4.1.11",
+    "npm-watch": "^0.3.0",
     "uglifyjs": "^2.4.11"
   },
   "author": "Avin Mathew",
