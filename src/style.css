@@ -10,8 +10,14 @@ body {
   z-index: 400;
   position: absolute;
   top: 0;
-  right: 0;
-  padding: 16px;
+  left: calc(50% - 50px);
+  padding: 4px;
+  background-color: #fff;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  font: 12px Roboto;
+  width: 100px;
+  text-align: center;
 }
 
 .div-icon {
@@ -90,4 +96,12 @@ path.shape.ferry {
 .hide-label .vehicle-label,
 .hide-label .delay-label {
   font-size: 0;
+}
+
+.leaflet-bar a.traffic-toggle {
+  color: #808080;
+}
+
+.leaflet-bar a.traffic-toggle.enabled {
+  color: #4285F4;
 }

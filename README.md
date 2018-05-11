@@ -32,6 +32,7 @@ The browser supports the following query strings
 * lat: initial latitude of the map center. If omitted, uses HTML5 geolocation and if not available, defaults to Brisbane, Australia.
 * lng: initial longitude of the map center. If omitted, uses HTML5 geolocation and if not available, defaults to Brisbane, Australia.
 * z: initial zoom level of the map.
+* traffic: "on" or "off" to enable/disable traffic layer on startup
 
 ## Run server
 

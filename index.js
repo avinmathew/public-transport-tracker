@@ -11,8 +11,9 @@ const turf = {
 
 const URL = process.env.GTFS_REALTIME_URL;
 const MAX_ROUTE_COUNT = 10; // Max number of routes before we ignore querying the database
+const LATLNG_DECIMAL_PLACES = 5; // Precision to send back to client
 
-const DIRECTION_LOOKUP = { 0: "inbound", 1: "outbound" };
+const DIRECTION_LOOKUP = { 0: "in", 1: "out" };
 const ROUTE_TYPE_LOOKUP = { 0: "tram", 2: "rail", 3: "bus", 4: "ferry" };
 
 const knex = require("knex")({
@@ -86,8 +87,8 @@ app.get("/feed", async (req, res) => {
       }
 
       // Ignore vehicles outside specified map bounds
-      const latitude = v.vehicle.position.latitude;
-      const longitude = v.vehicle.position.longitude;
+      const latitude = v.vehicle.position.latitude && +v.vehicle.position.latitude.toFixed(LATLNG_DECIMAL_PLACES);
+      const longitude = v.vehicle.position.longitude && +v.vehicle.position.longitude.toFixed(LATLNG_DECIMAL_PLACES);
       const point = turf.point([longitude, latitude]);
       if (!turf.booleanPointInPolygon(point, bounds)) {
         return;

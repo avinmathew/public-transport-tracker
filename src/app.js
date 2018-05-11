@@ -1,14 +1,10 @@
 var DEFAULT_LAT = -27.4698, DEFAULT_LNG = 153.0251, DEFAULT_ZOOM = 15;
-var LATLNG_DECIMAL_PLACES = 6;
-var REFRESH_INTERVAL = 20000; // ms
+var LATLNG_DECIMAL_PLACES = 5;
+var REFRESH_UPDATE_INTERVAL = 1000; // ms, how often to update countdown timer
+var REFRESH_INTERVAL = 15000; // ms
 var LABEL_SHOW_ZOOM_LEVEL = 12;
 
-var $refresh = document.getElementById("refresh");
-var spinner = new Spinner({
-  radius: 4,
-  width: 2,
-  length: 6
-});
+var $refreshStatus = document.getElementById("refresh");
 
 var search = URI().search(true);
 var routes = [];
@@ -17,6 +13,8 @@ if (search.routes) {
 }
 
 var map = L.map("map", { attributionControl: false });
+
+// Set map position
 if (search.lat && search.lng) {
   var zoom = search.z || DEFAULT_ZOOM;
   map.setView([search.lat, search.lng], zoom);
@@ -28,6 +26,7 @@ if (navigator.geolocation && !(search.lat && search.lng)) {
     map.setView([position.coords.latitude, position.coords.longitude], DEFAULT_ZOOM);
   });
 }
+
 map.on("moveend", function (e) {
   var latlng = map.getCenter();
   var url = URI().setSearch({
@@ -36,13 +35,60 @@ map.on("moveend", function (e) {
     z: map.getZoom()
   });
   window.history.pushState("", "", url.toString());
+  remaining = 0;
   getFeed();
 });
 
 var googleMaps = L.gridLayer.googleMutant({
   type: "roadmap"
 }).addTo(map);
-googleMaps.addGoogleLayer("TrafficLayer");
+
+// Add traffic layer
+var trafficEnabled;
+if (search.traffic) {
+  if (search.traffic === "on") {
+    trafficEnabled = true;
+  } else if (search.traffic === "off") {
+    trafficEnabled = false;
+  }
+} else { // If not specified in URL, default to "on"
+  var url = URI().addSearch({traffic: "on"})
+  window.history.pushState("", "", url.toString());
+  trafficEnabled = true;
+}
+
+var $topRight = document.querySelector(".leaflet-top.leaflet-right");
+var $leafletBar = document.createElement("div");
+$leafletBar.classList.add("leaflet-bar", "leaflet-control");
+$topRight.appendChild($leafletBar);
+
+var $trafficBtn = document.createElement("a");
+$trafficBtn.classList.add("material-icons", "traffic-toggle");
+$trafficBtn.href = "#";
+$trafficBtn.innerHTML = "traffic";
+$leafletBar.appendChild($trafficBtn);
+
+if (trafficEnabled) {
+  $trafficBtn.classList.add("enabled");
+  googleMaps.addGoogleLayer("TrafficLayer");
+}
+
+$trafficBtn.onclick = function(e) {
+  if (trafficEnabled) {
+    googleMaps.removeGoogleLayer("TrafficLayer");
+    $trafficBtn.classList.remove("enabled");
+    var url = URI().setSearch({traffic: "off"})
+    window.history.pushState("", "", url.toString());
+    trafficEnabled = false;
+  } else {
+    googleMaps.addGoogleLayer("TrafficLayer");
+    $trafficBtn.classList.add("enabled");
+    var url = URI().setSearch({traffic: "on"})
+    window.history.pushState("", "", url.toString());
+    trafficEnabled = true;
+  }
+  e.preventDefault();
+};
 
 var shapeGroup = L.layerGroup().addTo(map);
 var layerGroup = L.layerGroup().addTo(map);
@@ -68,11 +114,11 @@ function toggleLabels() {
 
 function vehicleLabel(route, direction) {
   var html = '<span class="vehicle-label">';
-  if (direction === "inbound") {
+  if (direction === "in") {
     html += "&lt;";
   }
   html += route
-  if (direction === "outbound") {
+  if (direction === "out") {
     html += "&gt;";
   }
   html += "</span>";
@@ -109,13 +155,21 @@ function createIcon(routeType, route, direction, delay) {
 }
 
 var isFetching = false;
+var remaining = 0;
 function getFeed() {
   if (isFetching) {
     return; // Don't get feed if request is already in progress
   }
+
+  if (remaining > 0) {
+    $refreshStatus.innerHTML = "Updating in " + remaining / 1000 + " sec";
+    remaining -= REFRESH_UPDATE_INTERVAL;
+    return;
+  }
+
   isFetching = true;
 
-  spinner.spin($refresh);
+  $refreshStatus.innerHTML = "Updating";
   var feedUrl = URI("feed");
   var bounds = map.getBounds();
   feedUrl = feedUrl.addSearch("neLat", bounds.getNorthEast().lat.toFixed(6));
@@ -180,8 +234,9 @@ function getFeed() {
           delete vehicleLayerLookup[l];
         });
 
-        spinner.stop();
+        $refreshStatus.innerHTML = "Updated";
         isFetching = false;
+        remaining = REFRESH_INTERVAL;
       });
     })
     .catch(function (e) {
@@ -194,11 +249,12 @@ function getFeed() {
           L.DomUtil.addClass(marker._icon, "disconnected");
         }
       }
-      spinner.stop();
+      $refreshStatus.innerHTML = "Error";
       isFetching = false;
+      remaining = REFRESH_INTERVAL;
       console.error(e);
     });
 }
 getFeed()
   .then(toggleLabels);
-setInterval(getFeed, REFRESH_INTERVAL);
+setInterval(getFeed, REFRESH_UPDATE_INTERVAL);
