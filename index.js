@@ -1,6 +1,7 @@
 require("dotenv").config();
 
 const express = require("express");
+const helmet = require("helmet");
 const GtfsRealtimeBindings = require("gtfs-realtime-bindings");
 const axios = require("axios");
 const turf = {
@@ -27,6 +28,7 @@ const knex = require("knex")({
 });
 
 const app = express();
+app.use(helmet());
 app.use(express.static("public"));
 
 app.get("/feed", async (req, res) => {
