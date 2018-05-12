@@ -72,6 +72,7 @@ app.get("/feed", async (req, res) => {
         route: trip.route_short_name || v.route, // if there's no name, probably an unplanned trip
         routeType: ROUTE_TYPE_LOOKUP[trip.route_type],
         direction: DIRECTION_LOOKUP[trip.direction_id],
+        delay: v.delay
       }
     });
 
