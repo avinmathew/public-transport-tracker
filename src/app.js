@@ -7,9 +7,66 @@ var LABEL_SHOW_ZOOM_LEVEL = 12;
 var $refreshStatus = document.getElementById("refresh");
 
 var search = URI().search(true);
-var routes = [];
-if (search.routes) {
-  routes = search.routes.split(",");
+
+// Setup routes panel
+function refreshRoutesPanel() {
+  var search = URI().search(true);
+  var routes = [];
+  if (search.routes) {
+    routes = search.routes.split(",");
+    routes.sort();
+  }
+
+  var $routes = document.querySelector("#routes");
+
+  // Clear existing content. This also removes all existing event handlers
+  $routes.innerHTML = "";
+
+  // Add existing routes
+  routes.forEach(function (route) {
+    var $route = document.createElement("span");
+    $route.classList.add("route");
+    $route.innerHTML = route;
+    $route.onclick = function () {
+      var newRoutes = routes.filter(function (r) { return route !== r; });
+      var url = URI().setSearch({routes: newRoutes.join(",")});
+      window.history.pushState("", "", url.toString());
+      refreshRoutesPanel();
+    };
+    $routes.appendChild($route);
+  });
+
+  // Input
+  var $inputRoute = document.createElement("input");
+  $inputRoute.type = "text";
+  $inputRoute.placeholder = "Add route";
+  var addRoute = function () {
+    var existingRoute = routes.find(function (r) { return r === $inputRoute.value; });
+    if (existingRoute) {
+      $inputRoute.value = "";
+      return;
+    }
+    routes.push($inputRoute.value);
+    var url = URI().setSearch({routes: routes.join(",")});
+    window.history.pushState("", "", url.toString());
+    refreshRoutesPanel();
+  };
+  $inputRoute.onblur = addRoute;
+  $inputRoute.onkeyup = function (e) {
+    if (e.keyCode == 13) {
+      addRoute();
+    }
+  }
+  $routes.appendChild($inputRoute);
+
+  // Center panel
+  var windowWidth = window.innerWidth;
+  var routesWidth = $routes.offsetWidth;
+  $routes.style.left = windowWidth / 2 - routesWidth / 2;
+}
+refreshRoutesPanel();
+window.onresize = function () {
+  refreshRoutesPanel();
 }
 
 var map = L.map("map", { attributionControl: false });
@@ -176,6 +233,7 @@ function getFeed() {
   feedUrl = feedUrl.addSearch("neLng", bounds.getNorthEast().lng.toFixed(6));
   feedUrl = feedUrl.addSearch("swLat", bounds.getSouthWest().lat.toFixed(6));
   feedUrl = feedUrl.addSearch("swLng", bounds.getSouthWest().lng.toFixed(6));
+  var search = URI().search(true);
   if (search.routes) {
     feedUrl = feedUrl.addSearch("routes", search.routes);
   }
