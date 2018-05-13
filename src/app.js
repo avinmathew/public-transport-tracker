@@ -292,6 +292,8 @@ function getFeed() {
           delete vehicleLayerLookup[l];
         });
 
+        toggleLabels();
+
         $refreshStatus.innerHTML = "Updated";
         isFetching = false;
         remaining = REFRESH_INTERVAL;
@@ -313,6 +315,5 @@ function getFeed() {
       console.error(e);
     });
 }
-getFeed()
-  .then(toggleLabels);
+getFeed();
 setInterval(getFeed, REFRESH_UPDATE_INTERVAL);
