@@ -70,7 +70,7 @@ app.get("/feed", async (req, res) => {
         latitude: v.latitude,
         longitude: v.longitude,
         route: trip.route_short_name || v.route, // if there's no name, probably an unplanned trip
-        routeType: ROUTE_TYPE_LOOKUP[trip.route_type],
+        routeType: ROUTE_TYPE_LOOKUP[trip.route_type] || "rail", // Schedules seem to be missing train routes
         direction: DIRECTION_LOOKUP[trip.direction_id],
         delay: v.delay
       }
