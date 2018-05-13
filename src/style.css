@@ -58,7 +58,7 @@ body {
 }
 
 .div-icon .vehicle-label {
-  background-color: #333333ee;
+  background-color: rgba(50, 50, 50, 0.9);
   width: auto !important;
   padding: 4px 7px 7px 7px;
   border-radius: 10px;
@@ -75,35 +75,35 @@ path.shape {
 }
 
 .div-icon.tram .vehicle-label {
-  background-color: #006d2cee;
+  background-color: rgba(0, 108, 44, 0.9);
 }
 
 path.shape.tram {
-  stroke: #006d2cee;
+  stroke: rgba(0, 108, 44, 0.9);
 }
 
 .div-icon.rail .vehicle-label {
-  background-color: #a50f15ee;
+  background-color: rgba(165, 15, 21, 0.9);
 }
 
 path.shape.rail {
-  stroke: #a50f15ee;
+  stroke: rgba(165, 15, 21, 0.9);
 }
 
 .div-icon.bus .vehicle-label {
-  background-color: #252525ee;
+  background-color: rgba(36, 36, 36, 0.9);
 }
 
 path.shape.bus {
-  stroke: #252525ee;
+  stroke: rgba(36, 36, 36, 0.9);
 }
 
 .div-icon.ferry .vehicle-label {
-  background-color: #253494ee;
+  background-color: rgba(36, 51, 148, 0.9);
 }
 
 path.shape.ferry {
-  stroke: #253494ee;
+  stroke: rgba(36, 51, 148, 0.9);
 }
 
 .delay-cont {
