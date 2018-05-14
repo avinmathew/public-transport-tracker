@@ -51,9 +51,18 @@ function refreshRoutesPanel() {
     window.history.pushState("", "", url.toString());
     refreshRoutesPanel();
   };
-  $inputRoute.onblur = addRoute;
+  $inputRoute.onfocus = function () {
+    // On Android, selecting input triggers a resize event which then rerenders the panel and creates a new input,
+    // and thus the input loses focus. So stop resize event and restore it on blur.
+    window.onresize = null;
+  };
+  $inputRoute.onblur = function () {
+    window.onresize = refreshRoutesPanel;
+    addRoute();
+  };
   $inputRoute.onkeyup = function (e) {
     if (e.keyCode == 13) {
+      window.onresize = refreshRoutesPanel;
       addRoute();
     }
   }
@@ -65,9 +74,7 @@ function refreshRoutesPanel() {
   $routes.style.left = windowWidth / 2 - routesWidth / 2;
 }
 refreshRoutesPanel();
-window.onresize = function () {
-  refreshRoutesPanel();
-}
+window.onresize = refreshRoutesPanel;
 
 var map = L.map("map", { attributionControl: false });
 
