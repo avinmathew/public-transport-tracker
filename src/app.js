@@ -40,7 +40,11 @@ function refreshRoutesPanel() {
   var $inputRoute = document.createElement("input");
   $inputRoute.type = "text";
   $inputRoute.placeholder = "Add route";
+  $inputRoute.maxLength = 4;
   var addRoute = function () {
+    if ($inputRoute.value === "") {
+      return;
+    }
     var existingRoute = routes.find(function (r) { return r === $inputRoute.value; });
     if (existingRoute) {
       $inputRoute.value = "";
