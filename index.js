@@ -84,5 +84,65 @@ app.get("/feed", async (req, res) => {
   }
 });
 
+app.get("/feed-stops", async (req, res) => {
+  try {
+    if (!req.query.from) {
+      res.status(400);
+      return res.send("Need 'from' stop code");
+    }
+    if (!req.query.to || !req.query.to.length) {
+      res.status(400);
+      return res.send("Need 'to' stop code");
+    }
+
+    let vehicles = await cachedFeed.get();
+
+    const from = req.query.from;
+    let to;
+    if (req.query.to.includes(",")) {
+      to = req.query.to.split(",")
+    } else {
+      to = [req.query.to];
+    }
+
+    const trips = await knex
+      .select("t.trip_id", "r.route_short_name", "st1.departure_time", "s2.stop_name", "st2.arrival_time")
+      .from("trips as t")
+      .innerJoin("routes as r", "r.route_id", "t.route_id")
+      .innerJoin("stop_times as st1", "st1.trip_id", "t.trip_id")
+      .innerJoin("stops as s1", "s1.stop_id", "st1.stop_id")
+      .innerJoin("stop_times as st2", "st2.trip_id", "t.trip_id")
+      .innerJoin("stops as s2", "s2.stop_id", "st2.stop_id")
+      .where("s1.stop_code", from)
+      .whereIn("s2.stop_code", to);
+
+    vehicles = vehicles
+      .filter(v => trips.find(t => t.trip_id === v.tripId))
+      .map(v => {
+        const trip = trips.find(t => t.trip_id === v.tripId) || {};
+        return {
+          route: trip.route_short_name || v.route, // if there's no name, probably an unplanned trip
+          delay: v.delay,
+          departs: trip.departure_time.substring(0, 5),
+          to: trip.stop_name,
+          arrives: trip.arrival_time.substring(0, 5)
+        }
+      });
+    vehicles.sort((a, b) => {
+      if (!a.departs || !b.departs) {
+        return 0;
+      }
+      return a.departs.localeCompare(b.departs);
+    });
+
+    res.json(vehicles);
+  } catch (err) {
+    console.error(err);
+    res.status(500);
+    res.json(err);
+  }
+});
+
+
 const port = parseInt(process.env.PORT, 10) || 3000;
 app.listen(port, () => console.log(`Listening on port ${port}`));

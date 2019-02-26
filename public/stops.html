@@ -1,0 +1,164 @@
+<html>
+
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Stops</title>
+  <style>
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    #error {
+      display: none;
+      background-color: #ffcccc;
+      color: red;
+      padding: 10px;
+    }
+
+    #updated {
+      margin-bottom: 5px;
+      text-align: right;
+      font-size: 0.9em;
+    }
+
+    table {
+      border: #ddd 1px solid;
+      text-align: center;
+      border-collapse: collapse;
+    }
+
+    thead {
+      background-color: #ddd;
+    }
+
+    tr {
+      border-bottom: #ddd 1px solid;
+    }
+
+    th,
+    td {
+      padding: 5px;
+    }
+
+    .arriving {
+      background-color: #eeffee;
+    }
+
+    .departed {
+      background-color: #ffeeee;
+    }
+
+    .schedule {
+      font-size: 0.9em;
+      font-style: italic;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="error">from and to query params must be specified</div>
+  <div id="updated"></div>
+  <table id="results-table">
+    <thead>
+      <th>Route</th>
+      <th>Departs</th>
+      <th>To</th>
+      <th>Arrives</th>
+    </thead>
+    <tbody id="results">
+    </tbody>
+  </table>
+  <script>
+    var REFRESH_INTERVAL = 30000;
+
+    function padLeft(str, padChar, numberOfChars) {
+      var pad = "";
+      for (var i = 0; i < numberOfChars; i++) {
+        pad += padChar;
+      }
+      var result = pad + str;
+      return result.substring(result.length - numberOfChars, result.length);
+    }
+
+    // Get from and to from query string
+    var query = window.location.search.substring(1, window.location.search.length);
+    var queries = query.split("&");
+    queries = queries.map(function (q) {
+      return q.split("=");
+    })
+    var from = queries.find(function (q) { return q[0].startsWith("from"); });
+    var to = queries.find(function (q) { return q[0].startsWith("to"); });
+    var fromVal, fromTo;
+
+    //var FROM = "005840";
+    //var TO = ["010802", "000081"];
+
+
+    function refresh() {
+      return fetch(`feed-stops?from=${fromVal}&to=${toVal}`)
+        .then(function (response) {
+          response.json().then(function (entities) {
+            var $results = document.getElementById("results");
+            $results.innerHTML = entities.map(function (e) {
+              // Calculate expected departure based on delay
+              var delayInMins = Math.round((e.delay || 0) / 60);
+              var departs, departClass;
+              if (e.departs) {
+                var departsHr = Number.parseInt(e.departs.substring(0, 2));
+                var departsMin = Number.parseInt(e.departs.substring(3, 5));
+                departsMin += Number.parseInt(delayInMins);
+                departsHr += Math.floor(departsMin / 60);
+                departsMin = departsMin % 60;
+                departs = `${padLeft(departsHr, "0", 2)}:${padLeft(departsMin, "0", 2)}`;
+
+                var now = new Date();
+                var nowAbs = now.getHours() * 60 + now.getMinutes();
+                var departsAbs = departsHr * 60 + departsMin;
+                if (nowAbs > departsAbs) {
+                  departClass = "departed";
+                } else {
+                  departClass = "arriving";
+                }
+              } else {
+                departs = "";
+              }
+
+              return (
+                `<tr class="${departClass}">` +
+                `<td>${e.route}</td>` +
+                (
+                  delayInMins === 0 ?
+                    `<td>${e.departs || ""}</td>` :
+                    "<td>" +
+                    departs +
+                    `<div class="schedule">${e.departs || ""}</span>` +
+                    "</td>"
+                ) +
+                `<td>${e.to || ""}</td>` +
+                `<td>${e.arrives || ""}</td>` +
+                "</tr>"
+              );
+            }).join("");
+
+            var $updated = document.getElementById("updated");
+            var updatedTime = new Date().toLocaleTimeString();
+            var updatedTimeParts = updatedTime.split(":");
+            var updatedTimeDesignator = updatedTime.split(" ");
+            $updated.innerHTML = `Updated ${updatedTimeParts[0]}:${updatedTimeParts[1]}${updatedTimeDesignator[1]}`;
+          });
+        });
+    }
+
+    if (from && to) {
+      fromVal = from[1];
+      toVal = to[1];
+      refresh();
+      setInterval(refresh, REFRESH_INTERVAL);
+    } else {
+      document.getElementById("results-table").style.display = "none";
+      document.getElementById("error").style.display = "block";
+    }
+  </script>
+</body>
+
+</html>
