@@ -2,15 +2,19 @@ require("dotenv").config();
 
 const express = require("express");
 const helmet = require("helmet");
-const cachedFeed = require("./cachedFeed");
 const turf = {
   point: require("@turf/helpers").point,
   polygon: require("@turf/helpers").polygon,
   booleanPointInPolygon: require("@turf/boolean-point-in-polygon").default
 };
+const cachedFeed = require("./cachedFeed");
+const padLeft = require("./padLeft");
 
 const DIRECTION_LOOKUP = { 0: "in", 1: "out" };
 const ROUTE_TYPE_LOOKUP = { 0: "tram", 2: "rail", 3: "bus", 4: "ferry" };
+
+// Period after the expected arrival of the vehicle to the stop to keep showing on the feed
+const DEFAULT_FEED_FILTER_TIME = 2; // minutes
 
 const knex = require("knex")({
   client: process.env.DB_CLIENT,
@@ -120,14 +124,55 @@ app.get("/feed-stops", async (req, res) => {
       .filter(v => trips.find(t => t.trip_id === v.tripId))
       .map(v => {
         const trip = trips.find(t => t.trip_id === v.tripId) || {};
+
         return {
           route: trip.route_short_name || v.route, // if there's no name, probably an unplanned trip
-          delay: v.delay,
-          departs: trip.departure_time.substring(0, 5),
-          to: trip.stop_name,
-          arrives: trip.arrival_time.substring(0, 5)
+          departs: trip.departure_time && trip.departure_time.substring(0, 5),
+          to: trip.stop_name
+            .replace("Elizabeth Street Stop 81 near George St", "Elizabeth St")
+            .replace("Cultural Centre, platform 1", "Cultural Centre"),
+          arrives: trip.arrival_time && trip.arrival_time.substring(0, 5)
         }
+      })
+      .map(v => {
+        if (v.departs) {
+          // Calculate expected departure based on delay
+          var delayInMins = Math.round((v.delay || 0) / 60);
+          let departsHr = Number.parseInt(v.departs.substring(0, 2));
+          let departsMin = Number.parseInt(v.departs.substring(3, 5));
+          departsMin += Number.parseInt(delayInMins);
+          departsHr += Math.floor(departsMin / 60);
+          departsMin = departsMin % 60;
+          const expectedDeparture = `${padLeft(departsHr, "0", 2)}:${padLeft(departsMin, "0", 2)}`;
+
+          const now = new Date();
+          const nowAbs = now.getHours() * 60 + now.getMinutes();
+          const departsAbs = departsHr * 60 + departsMin;
+          const hasDeparted = nowAbs > departsAbs;
+          return {
+            ...v,
+            expected: expectedDeparture,
+            departed: hasDeparted,
+          }
+        }
+        return v;
       });
+
+    // Hide vehicles that have departed the "from" stop
+    // Use max delay to be conservative
+    const maxDelay = vehicles.reduce((prev, curr) => curr.delay > prev.delay ? curr : prev).delay / 60 || DEFAULT_FEED_FILTER_TIME;
+    vehicles = vehicles.filter(v => {
+      if (v.departs) {
+        const departsHr = Number.parseInt(v.departs.substring(0, 2));
+        const departsMin = Number.parseInt(v.departs.substring(3, 5));
+        const now = new Date();
+        const nowAbs = now.getHours() * 60 + now.getMinutes();
+        const departsAbs = departsHr * 60 + departsMin;
+        return departsAbs + maxDelay > nowAbs;
+      } else {
+        return true;
+      }
+    });
     vehicles.sort((a, b) => {
       if (!a.departs || !b.departs) {
         return 0;
@@ -136,6 +181,52 @@ app.get("/feed-stops", async (req, res) => {
     });
 
     res.json(vehicles);
+  } catch (err) {
+    console.error(err);
+    res.status(500);
+    res.json(err);
+  }
+});
+
+app.get("/debug", async (req, res) => {
+  try {
+    let vehicles = await fileFeed.get();
+
+    const trips = await knex
+      .select("t.trip_id", "r.route_short_name", "st1.departure_time", "s2.stop_name", "st2.arrival_time")
+      .from("trips as t")
+      .innerJoin("routes as r", "r.route_id", "t.route_id")
+      .innerJoin("stop_times as st1", "st1.trip_id", "t.trip_id")
+      .innerJoin("stops as s1", "s1.stop_id", "st1.stop_id")
+      .innerJoin("stop_times as st2", "st2.trip_id", "t.trip_id")
+      .innerJoin("stops as s2", "s2.stop_id", "st2.stop_id")
+      .where("s1.stop_code", "005840");
+
+      vehicles = vehicles
+      .map(v => {
+        const trip = trips.find(t => t.trip_id === v.tripId) || {};
+        let status;
+        if (trip.trip_id) {
+          status = "1 Match";
+        } else if (["P129", "P137", "P141", "P151"].includes(v.route)) {
+          status = "2 Missing match";
+        } else {
+          status = "3 No match"
+        }
+        return {
+          route: v.route,
+          tripId: v.tripId,
+          status
+        }
+      });
+    vehicles.sort((a, b) => a.tripId.localeCompare(b.tripId));
+    vehicles.sort((a, b) => a.status.localeCompare(b.status));
+    vehicles = vehicles
+      .map(v => {
+        return `<tr><td>${v.route}</td><td>${v.tripId}</td><td>${v.status}</td></tr>`
+      });
+
+    res.send("<table><thead><th>Route</th><th>Trip Id</th><th>Match Status</th></thead><tbody>" + vehicles.join("") + "</tbody></table>");
   } catch (err) {
     console.error(err);
     res.status(500);

@@ -71,15 +71,6 @@
   <script>
     var REFRESH_INTERVAL = 30000;
 
-    function padLeft(str, padChar, numberOfChars) {
-      var pad = "";
-      for (var i = 0; i < numberOfChars; i++) {
-        pad += padChar;
-      }
-      var result = pad + str;
-      return result.substring(result.length - numberOfChars, result.length);
-    }
-
     // Get from and to from query string
     var query = window.location.search.substring(1, window.location.search.length);
     var queries = query.split("&");
@@ -88,11 +79,7 @@
     })
     var from = queries.find(function (q) { return q[0].startsWith("from"); });
     var to = queries.find(function (q) { return q[0].startsWith("to"); });
-    var fromVal, fromTo;
-
-    //var FROM = "005840";
-    //var TO = ["010802", "000081"];
-
+    var fromVal, toVal;
 
     function refresh() {
       return fetch(`feed-stops?from=${fromVal}&to=${toVal}`)
@@ -100,37 +87,14 @@
           response.json().then(function (entities) {
             var $results = document.getElementById("results");
             $results.innerHTML = entities.map(function (e) {
-              // Calculate expected departure based on delay
-              var delayInMins = Math.round((e.delay || 0) / 60);
-              var departs, departClass;
-              if (e.departs) {
-                var departsHr = Number.parseInt(e.departs.substring(0, 2));
-                var departsMin = Number.parseInt(e.departs.substring(3, 5));
-                departsMin += Number.parseInt(delayInMins);
-                departsHr += Math.floor(departsMin / 60);
-                departsMin = departsMin % 60;
-                departs = `${padLeft(departsHr, "0", 2)}:${padLeft(departsMin, "0", 2)}`;
-
-                var now = new Date();
-                var nowAbs = now.getHours() * 60 + now.getMinutes();
-                var departsAbs = departsHr * 60 + departsMin;
-                if (nowAbs > departsAbs) {
-                  departClass = "departed";
-                } else {
-                  departClass = "arriving";
-                }
-              } else {
-                departs = "";
-              }
-
               return (
-                `<tr class="${departClass}">` +
+                `<tr class="${e.departed ? "departed" : "arriving"}">` +
                 `<td>${e.route}</td>` +
                 (
-                  delayInMins === 0 ?
+                  e.expected ?
                     `<td>${e.departs || ""}</td>` :
                     "<td>" +
-                    departs +
+                    e.expected +
                     `<div class="schedule">${e.departs || ""}</span>` +
                     "</td>"
                 ) +
@@ -141,10 +105,7 @@
             }).join("");
 
             var $updated = document.getElementById("updated");
-            var updatedTime = new Date().toLocaleTimeString();
-            var updatedTimeParts = updatedTime.split(":");
-            var updatedTimeDesignator = updatedTime.split(" ");
-            $updated.innerHTML = `Updated ${updatedTimeParts[0]}:${updatedTimeParts[1]}${updatedTimeDesignator[1]}`;
+            $updated.innerHTML = `Updated ${new Date().toLocaleTimeString().substring(0, 5)}`;
           });
         });
     }
