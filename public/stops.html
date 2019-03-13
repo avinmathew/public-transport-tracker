@@ -91,12 +91,12 @@
                 `<tr class="${e.departed ? "departed" : "arriving"}">` +
                 `<td>${e.route}</td>` +
                 (
-                  e.expected ?
-                    `<td>${e.departs || ""}</td>` :
+                  e.expected && e.expected !== e.departs ?
                     "<td>" +
                     e.expected +
                     `<div class="schedule">${e.departs || ""}</span>` +
-                    "</td>"
+                    "</td>" :
+                    `<td>${e.departs || ""}</td>`
                 ) +
                 `<td>${e.to || ""}</td>` +
                 `<td>${e.arrives || ""}</td>` +

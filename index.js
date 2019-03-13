@@ -121,58 +121,63 @@ app.get("/feed-stops", async (req, res) => {
       .whereIn("s2.stop_code", to);
 
     vehicles = vehicles
+      // Remove vehicles that aren't in the scheduled trips since we can't tell when they'll depart/arrive
       .filter(v => trips.find(t => t.trip_id === v.tripId))
       .map(v => {
         const trip = trips.find(t => t.trip_id === v.tripId) || {};
-
         return {
-          route: trip.route_short_name || v.route, // if there's no name, probably an unplanned trip
+          route: trip.route_short_name,
           departs: trip.departure_time && trip.departure_time.substring(0, 5),
+          delay: v.delay,
           to: trip.stop_name
             .replace("Elizabeth Street Stop 81 near George St", "Elizabeth St")
             .replace("Cultural Centre, platform 1", "Cultural Centre"),
           arrives: trip.arrival_time && trip.arrival_time.substring(0, 5)
         }
-      })
+      });
+    // Max Delay is used to conservatively filter out vehicles that have already "arrived" at the "from" stop
+    const maxDelay = vehicles.reduce((prev, curr) => curr.delay > prev.delay ? curr : prev).delay / 60 + DEFAULT_FEED_FILTER_TIME;
+    vehicles = vehicles
       .map(v => {
+        let expectedDeparture, hasDeparted, exclude;
         if (v.departs) {
           // Calculate expected departure based on delay
-          var delayInMins = Math.round((v.delay || 0) / 60);
-          let departsHr = Number.parseInt(v.departs.substring(0, 2));
-          let departsMin = Number.parseInt(v.departs.substring(3, 5));
-          departsMin += Number.parseInt(delayInMins);
-          departsHr += Math.floor(departsMin / 60);
-          departsMin = departsMin % 60;
-          const expectedDeparture = `${padLeft(departsHr, "0", 2)}:${padLeft(departsMin, "0", 2)}`;
+          const delayInMins = Math.round((v.delay || 0) / 60);
+          const departsHr = Number.parseInt(v.departs.substring(0, 2));
+          const departsMin = Number.parseInt(v.departs.substring(3, 5));
+          const minDelay = departsMin + Number.parseInt(delayInMins);
+          const expectedHr = departsHr + Math.floor(minDelay / 60);
+          const expectedMin = minDelay % 60;
+          expectedDeparture = `${padLeft(expectedHr, "0", 2)}:${padLeft(expectedMin, "0", 2)}`;
 
+          // Use the greater of departs or expected to determine whether the vehicle has departed
           const now = new Date();
           const nowAbs = now.getHours() * 60 + now.getMinutes();
           const departsAbs = departsHr * 60 + departsMin;
-          const hasDeparted = nowAbs > departsAbs;
-          return {
-            ...v,
-            expected: expectedDeparture,
-            departed: hasDeparted,
-          }
+          const expectedAbs = expectedHr * 60 + expectedMin;
+          hasDeparted = Math.max(departsAbs, expectedAbs) > nowAbs;
+          exclude = departsAbs + maxDelay < nowAbs;
         }
-        return v;
-      });
-
-    // Hide vehicles that have departed the "from" stop
-    // Use max delay to be conservative
-    const maxDelay = vehicles.reduce((prev, curr) => curr.delay > prev.delay ? curr : prev).delay / 60 || DEFAULT_FEED_FILTER_TIME;
-    vehicles = vehicles.filter(v => {
-      if (v.departs) {
-        const departsHr = Number.parseInt(v.departs.substring(0, 2));
-        const departsMin = Number.parseInt(v.departs.substring(3, 5));
-        const now = new Date();
-        const nowAbs = now.getHours() * 60 + now.getMinutes();
-        const departsAbs = departsHr * 60 + departsMin;
-        return departsAbs + maxDelay > nowAbs;
-      } else {
-        return true;
-      }
-    });
+        return {
+          route: v.route,
+          departs: v.departs,
+          expected: expectedDeparture,
+          departed: hasDeparted,
+          to: v.to,
+          arrives: v.arrives,
+          exclude: exclude
+        };
+      })
+      // Exclude vehicles that have already departed from the "from" stop
+      .filter(v => !v.exclude)
+      .map(v => ({
+        route: v.route,
+        departs: v.departs,
+        expected: v.expected,
+        departed: v.departed,
+        to: v.to,
+        arrives: v.arrives
+      }))
     vehicles.sort((a, b) => {
       if (!a.departs || !b.departs) {
         return 0;
