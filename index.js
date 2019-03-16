@@ -48,7 +48,8 @@ app.get("/feed", async (req, res) => {
       [req.query.neLng, req.query.neLat],
     ]]);
 
-    let vehicles = await cachedFeed.get();
+    const feed = await cachedFeed.get()
+    let vehicles = feed.vehicles;
     // Keep vehicles on specified routes
     if (routes.length) {
       vehicles = vehicles.filter(v => routes.includes(v.route));
@@ -99,7 +100,8 @@ app.get("/feed-stops", async (req, res) => {
       return res.send("Need 'to' stop code");
     }
 
-    let vehicles = await cachedFeed.get();
+    const feed = await cachedFeed.get();
+    let vehicles = feed.vehicles;
 
     const from = req.query.from;
     let to;
@@ -137,34 +139,48 @@ app.get("/feed-stops", async (req, res) => {
       });
     // Max Delay is used to conservatively filter out vehicles that have already "arrived" at the "from" stop
     const maxDelay = vehicles.reduce((prev, curr) => curr.delay > prev.delay ? curr : prev).delay / 60 + DEFAULT_FEED_FILTER_TIME;
+    let earliestArrival = "99:99";
     vehicles = vehicles
       .map(v => {
-        let expectedDeparture, hasDeparted, exclude;
+        let expectDepart, expectArrive, hasDeparted, exclude;
         if (v.departs) {
           // Calculate expected departure based on delay
           const delayInMins = Math.round((v.delay || 0) / 60);
+
           const departsHr = Number.parseInt(v.departs.substring(0, 2));
           const departsMin = Number.parseInt(v.departs.substring(3, 5));
-          const minDelay = departsMin + Number.parseInt(delayInMins);
-          const expectedHr = departsHr + Math.floor(minDelay / 60);
-          const expectedMin = minDelay % 60;
-          expectedDeparture = `${padLeft(expectedHr, "0", 2)}:${padLeft(expectedMin, "0", 2)}`;
+          const departsDelay = departsMin + Number.parseInt(delayInMins);
+          const expectDepartHr = departsHr + Math.floor(departsDelay / 60);
+          const expectDepartMin = departsDelay < 0 ? 60 + departsDelay : departsDelay % 60;
+          expectDepart = `${padLeft(expectDepartHr, "0", 2)}:${padLeft(expectDepartMin, "0", 2)}`;
 
-          // Use the greater of departs or expected to determine whether the vehicle has departed
-          const now = new Date();
+          const arrivesHr = Number.parseInt(v.arrives.substring(0, 2));
+          const arrivesMin = Number.parseInt(v.arrives.substring(3, 5));
+          const arrivesDelay = arrivesMin + Number.parseInt(delayInMins);
+          const expectArriveHr = arrivesHr + Math.floor(arrivesDelay / 60);
+          const expectArriveMin = arrivesDelay < 0 ? 60 + arrivesDelay : arrivesDelay % 60;
+          expectArrive = `${padLeft(expectArriveHr, "0", 2)}:${padLeft(expectArriveMin, "0", 2)}`;
+
+          const now = feed.timestamp;
           const nowAbs = now.getHours() * 60 + now.getMinutes();
           const departsAbs = departsHr * 60 + departsMin;
-          const expectedAbs = expectedHr * 60 + expectedMin;
-          hasDeparted = Math.max(departsAbs, expectedAbs) > nowAbs;
+          const expectDepartAbs = expectDepartHr * 60 + expectDepartMin;
+          // Use the greater of departs or expected to determine whether the vehicle has departed
+          hasDeparted = Math.max(departsAbs, expectDepartAbs) < nowAbs;
           exclude = departsAbs + maxDelay < nowAbs;
+
+          if (!exclude && !hasDeparted && expectArrive < earliestArrival) {
+            earliestArrival = expectArrive;
+          }
         }
         return {
           route: v.route,
           departs: v.departs,
-          expected: expectedDeparture,
+          expectDepart: expectDepart,
           departed: hasDeparted,
           to: v.to,
           arrives: v.arrives,
+          expectArrive: expectArrive,
           exclude: exclude
         };
       })
@@ -173,11 +189,15 @@ app.get("/feed-stops", async (req, res) => {
       .map(v => ({
         route: v.route,
         departs: v.departs,
-        expected: v.expected,
+        expectDepart: v.expectDepart,
         departed: v.departed,
         to: v.to,
-        arrives: v.arrives
-      }))
+        arrives: v.arrives,
+        expectArrive: v.expectArrive,
+        // Return undefined so the earliestArrival key is not included in the JSON object sent to client
+        earliestArrival : v.expectArrive === earliestArrival ? true : undefined
+      }));
+
     vehicles.sort((a, b) => {
       if (!a.departs || !b.departs) {
         return 0;

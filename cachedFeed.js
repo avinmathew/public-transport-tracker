@@ -17,12 +17,12 @@ module.exports = function () {
       // Check if the cache should be invalidated
       if (cache.date && Date.now() - cache.date > CACHE_INVALIDATE_TIME) {
         cache.date = null;
-        cache.vehicles = null;
+        cache.gtfs = null;
       }
       // If not invalidated, return cached vehicles
       if (cache.vehicles) {
         return new Promise((resolve, reject) => {
-          resolve(cache.vehicles);
+          resolve(cache.gtfs);
         });
       }
       // If in the process of refreshing, return existing promise
@@ -34,6 +34,7 @@ module.exports = function () {
         try {
           const response = await axios.get(URL, { responseType: "arraybuffer" });
           const feed = GtfsRealtimeBindings.FeedMessage.decode(response.data);
+          const timestamp = new Date(feed.header.timestamp.low * 1000);
 
           // Find vehicles with lat/lng coords
           let vehicles = feed.entity
@@ -70,11 +71,14 @@ module.exports = function () {
             });
 
 
-          cache.vehicles = Object.values(vehicles);
+          cache.gtfs = {
+            timestamp,
+            vehicles: Object.values(vehicles)
+          };
           cache.refreshPromise = null;
           cache.date = Date.now();
 
-          return resolve(cache.vehicles);
+          return resolve(cache.gtfs);
         } catch (err) {
           cache.refreshPromise = null;
           return reject(err);
