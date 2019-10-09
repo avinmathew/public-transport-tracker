@@ -138,7 +138,7 @@ app.get("/feed-stops", async (req, res) => {
         }
       });
     // Max Delay is used to conservatively filter out vehicles that have already "arrived" at the "from" stop
-    const maxDelay = vehicles.reduce((prev, curr) => curr.delay > prev.delay ? curr : prev).delay / 60 + DEFAULT_FEED_FILTER_TIME;
+    const maxDelay = vehicles.reduce((prev, curr) => curr.delay > prev.delay ? curr : prev, 0).delay / 60 + DEFAULT_FEED_FILTER_TIME;
     let earliestArrival = "99:99";
     vehicles = vehicles
       .map(v => {
