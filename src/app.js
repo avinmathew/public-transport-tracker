@@ -107,56 +107,8 @@ map.on("moveend", function (e) {
   getFeed();
 });
 
-var googleMaps = L.gridLayer.googleMutant({
-  type: "roadmap"
-}).addTo(map);
-
-// Add traffic layer
-var trafficEnabled;
-if (search.traffic) {
-  if (search.traffic === "on") {
-    trafficEnabled = true;
-  } else if (search.traffic === "off") {
-    trafficEnabled = false;
-  }
-} else { // If not specified in URL, default to "on"
-  var url = URI().addSearch({traffic: "on"})
-  window.history.pushState("", "", url.toString());
-  trafficEnabled = true;
-}
-
-var $topRight = document.querySelector(".leaflet-top.leaflet-right");
-var $leafletBar = document.createElement("div");
-$leafletBar.classList.add("leaflet-bar", "leaflet-control");
-$topRight.appendChild($leafletBar);
-
-var $trafficBtn = document.createElement("a");
-$trafficBtn.classList.add("material-icons", "traffic-toggle");
-$trafficBtn.href = "#";
-$trafficBtn.innerHTML = "traffic";
-$leafletBar.appendChild($trafficBtn);
-
-if (trafficEnabled) {
-  $trafficBtn.classList.add("enabled");
-  googleMaps.addGoogleLayer("TrafficLayer");
-}
-
-$trafficBtn.onclick = function(e) {
-  if (trafficEnabled) {
-    googleMaps.removeGoogleLayer("TrafficLayer");
-    $trafficBtn.classList.remove("enabled");
-    var url = URI().setSearch({traffic: "off"})
-    window.history.pushState("", "", url.toString());
-    trafficEnabled = false;
-  } else {
-    googleMaps.addGoogleLayer("TrafficLayer");
-    $trafficBtn.classList.add("enabled");
-    var url = URI().setSearch({traffic: "on"})
-    window.history.pushState("", "", url.toString());
-    trafficEnabled = true;
-  }
-  e.preventDefault();
-};
+// Add base map
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 var shapeGroup = L.layerGroup().addTo(map);
 var layerGroup = L.layerGroup().addTo(map);
