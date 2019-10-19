@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "prepare": "cleancss -o public/style.min.css src/style.css && uglifyjs --compress -o public/app.min.js -- src/app.js",
+    "prepare": "cleancss -o public/style.min.css src/style.css && uglifyjs --compress -o public/app.min.js -- src/app.js && uglifyjs --compress -o public/AnimatedMarker.min.js -- src/AnimatedMarker.js",
     "watch": "npm-watch"
   },
   "watch": {

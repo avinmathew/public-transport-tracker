@@ -222,16 +222,18 @@ function getFeed() {
             }
 
             if (e.latitude && e.longitude) {
-              marker.setLatLng([e.latitude, e.longitude]);
+              marker.setLine([[marker.options.lastPosition.latitude, marker.options.lastPosition.longitude], [e.latitude, e.longitude]]);
               marker.options.lastPosition = {
                 latitude: e.latitude,
                 longitude: e.longitude
               }
+              marker.start();
             }
           } else { // Create marker
             var icon = createIcon(e.routeType, e.route, e.direction, e.delay);
-            marker = L.marker([e.latitude, e.longitude], {
+            marker = L.animatedMarker([[e.latitude, e.longitude]], {
               icon: icon,
+              interval: REFRESH_INTERVAL - 1000, // Subtract 1 sec as buffer
               lastPosition: {
                 latitude: e.latitude,
                 longitude: e.longitude
