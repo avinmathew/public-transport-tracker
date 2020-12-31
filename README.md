@@ -12,6 +12,8 @@ See `db` for SQL scripts to create tables, insert data (MySQL scripts for bulk l
 
 Note: drop indexes before bulk loading data.
 
+For MySQL 8+, allow local infile: `SET GLOBAL local_infile=1;`
+
 ## Environment variables
 
 Environment variables can either be supplied via command line or put in a `.env` file.
