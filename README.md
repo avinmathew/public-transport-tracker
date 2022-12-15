@@ -18,7 +18,7 @@ For MySQL 8+, allow local infile: `SET GLOBAL local_infile=1;`
 
 Environment variables can either be supplied via command line or put in a `.env` file.
 
-* REALTIME_URL: GTFS Realtime URL, e.g. https://gtfsrt.api.translink.com.au/Feed/SEQ
+* REALTIME_URL: GTFS Realtime URL, e.g. https://gtfsrt.api.translink.com.au/api/realtime/SEQ/VehiclePositions
 * DB_CLIENT: Knex database client, e.g. mysql
 * DB_HOST: Database server, e.g. localhost
 * DB_USER: Database user

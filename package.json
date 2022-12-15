@@ -23,7 +23,7 @@
   "devDependencies": {
     "clean-css-cli": "^4.1.11",
     "npm-watch": "^0.3.0",
-    "uglifyjs": "^2.4.11"
+    "uglify-js": "^3.0.0"
   },
   "author": "Avin Mathew",
   "license": "MIT"

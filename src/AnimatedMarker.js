@@ -62,7 +62,7 @@ L.AnimatedMarker = L.Marker.extend({
 
     // Normalize the transition speed from vertex to vertex
     if (this._i < len && this._i > 0) {
-      speed = this._latlngs[this._i-1].distanceTo(this._latlngs[this._i]) / this.options.distance * this.options.interval;
+      speed = L.latLng(this._latlngs[this._i-1]).distanceTo(this._latlngs[this._i]) / this.options.distance * this.options.interval;
     }
 
     // Only if CSS3 transitions are supported

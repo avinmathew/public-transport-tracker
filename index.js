@@ -61,11 +61,17 @@ app.get("/feed", async (req, res) => {
     });
 
     // Get direction and type of vehicle
-    const trips = await knex
-      .select("trip_id", "direction_id", "shape_id", "route_short_name", "route_type")
-      .from("trips")
-      .innerJoin("routes", "routes.route_id", "trips.route_id")
-      .whereIn("trip_id", vehicles.map(v => v.tripId));
+    // Wrap in try catch in case we can't contact DB, but we can still return GTFS data
+    let trips = [];
+    try {
+      trips = await knex
+        .select("trip_id", "direction_id", "shape_id", "route_short_name", "route_type")
+        .from("trips")
+        .innerJoin("routes", "routes.route_id", "trips.route_id")
+        .whereIn("trip_id", vehicles.map(v => v.tripId));
+    } catch (err) {
+      console.error(err);
+    }
 
     vehicles = vehicles.map(v => {
       const trip = trips.find(t => t.trip_id === v.tripId) || {};
