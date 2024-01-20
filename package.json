@@ -10,12 +10,12 @@
     "prepare": "src/*.*"
   },
   "dependencies": {
-    "@turf/boolean-point-in-polygon": "^6.0.1",
-    "@turf/helpers": "^6.1.3",
-    "axios": "^0.18.0",
-    "dotenv": "^5.0.1",
+    "@turf/boolean-point-in-polygon": "^6.5.0",
+    "@turf/helpers": "^6.5.0",
+    "node-fetch": "^3.3.2",
+    "dotenv": "^16.3.1",
     "express": "^4.16.3",
-    "gtfs-realtime-bindings": "0.0.4",
+    "gtfs-realtime-bindings": "^1.1.1",
     "helmet": "^3.12.0",
     "knex": "^0.19.5",
     "mysql": "^2.15.0"
@@ -25,6 +25,7 @@
     "npm-watch": "^0.3.0",
     "uglify-js": "^3.0.0"
   },
+  "type": "module",
   "author": "Avin Mathew",
   "license": "MIT"
 }

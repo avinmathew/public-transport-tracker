@@ -39,7 +39,3 @@ The browser supports the following query strings
 ## Run server
 
 In development, start the server with `npm start` and visit <http://localhost:3000>.
-
-## Dependency changes
-
-`node_modules/gtfs-realtime-bindings/gtfs-realtime.js` has been modified to allow an extra `ScheduleRelationship` enum  of `5` to prevent the Translink feed from crashing.

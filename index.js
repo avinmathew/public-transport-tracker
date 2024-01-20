@@ -1,14 +1,12 @@
-require("dotenv").config();
+import "dotenv/config";
 
-const express = require("express");
-const helmet = require("helmet");
-const turf = {
-  point: require("@turf/helpers").point,
-  polygon: require("@turf/helpers").polygon,
-  booleanPointInPolygon: require("@turf/boolean-point-in-polygon").default
-};
-const cachedFeed = require("./cachedFeed");
-const padLeft = require("./padLeft");
+import express from "express";
+import helmet from "helmet";
+import knex from "knex";
+import { point as turf_point, polygon as turf_polygon } from "@turf/helpers"
+import booleanPointInPolygon from "@turf/boolean-point-in-polygon"
+import cachedFeed from "./cachedFeed.js";
+import padLeft from "./padLeft.js";
 
 const DIRECTION_LOOKUP = { 0: "in", 1: "out" };
 const ROUTE_TYPE_LOOKUP = { 0: "tram", 2: "rail", 3: "bus", 4: "ferry" };
@@ -16,7 +14,7 @@ const ROUTE_TYPE_LOOKUP = { 0: "tram", 2: "rail", 3: "bus", 4: "ferry" };
 // Period after the expected arrival of the vehicle to the stop to keep showing on the feed
 const DEFAULT_FEED_FILTER_TIME = 2; // minutes
 
-const knex = require("knex")({
+const knex_db = knex({
   client: process.env.DB_CLIENT,
   connection: {
     host: process.env.DB_HOST,
@@ -40,7 +38,7 @@ app.get("/feed", async (req, res) => {
       res.status(400);
       return res.send("Unspecified boundary parameters");
     }
-    const bounds = turf.polygon([[
+    const bounds = turf_polygon([[
       [req.query.neLng, req.query.neLat],
       [req.query.neLng, req.query.swLat],
       [req.query.swLng, req.query.swLat],
@@ -48,7 +46,7 @@ app.get("/feed", async (req, res) => {
       [req.query.neLng, req.query.neLat],
     ]]);
 
-    const feed = await cachedFeed.get()
+    const feed = await cachedFeed()
     let vehicles = feed.vehicles;
     // Keep vehicles on specified routes
     if (routes.length) {
@@ -56,15 +54,15 @@ app.get("/feed", async (req, res) => {
     }
     // Keep vehicles within specified map bounds
     vehicles = vehicles.filter(v => {
-      const point = turf.point([v.longitude, v.latitude]);
-      return turf.booleanPointInPolygon(point, bounds);
+      const point = turf_point([v.longitude, v.latitude]);
+      return booleanPointInPolygon(point, bounds);
     });
 
     // Get direction and type of vehicle
     // Wrap in try catch in case we can't contact DB, but we can still return GTFS data
     let trips = [];
     try {
-      trips = await knex
+      trips = await knex_db
         .select("trip_id", "direction_id", "shape_id", "route_short_name", "route_type")
         .from("trips")
         .innerJoin("routes", "routes.route_id", "trips.route_id")
@@ -106,7 +104,7 @@ app.get("/feed-stops", async (req, res) => {
       return res.send("Need 'to' stop code");
     }
 
-    const feed = await cachedFeed.get();
+    const feed = await cachedFeed();
     let vehicles = feed.vehicles;
 
     const from = req.query.from;
@@ -117,7 +115,7 @@ app.get("/feed-stops", async (req, res) => {
       to = [req.query.to];
     }
 
-    const trips = await knex
+    const trips = await knex_db
       .select("t.trip_id", "r.route_short_name", "st1.departure_time", "s2.stop_name", "st2.arrival_time")
       .from("trips as t")
       .innerJoin("routes as r", "r.route_id", "t.route_id")
@@ -223,7 +221,7 @@ app.get("/debug", async (req, res) => {
   try {
     let vehicles = await fileFeed.get();
 
-    const trips = await knex
+    const trips = await knex_db
       .select("t.trip_id", "r.route_short_name", "st1.departure_time", "s2.stop_name", "st2.arrival_time")
       .from("trips as t")
       .innerJoin("routes as r", "r.route_id", "t.route_id")

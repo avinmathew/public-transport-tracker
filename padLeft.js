@@ -1,4 +1,4 @@
-module.exports = function padLeft(str, padChar, numberOfChars) {
+export default function padLeft(str, padChar, numberOfChars) {
   var pad = "";
   for (var i = 0; i < numberOfChars; i++) {
     pad += padChar;
