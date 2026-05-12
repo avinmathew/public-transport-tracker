@@ -39,7 +39,7 @@ function refreshRoutesPanel() {
   // Input
   var $inputRoute = document.createElement("input");
   $inputRoute.type = "text";
-  $inputRoute.placeholder = "Add route";
+  $inputRoute.placeholder = "Filter route";
   $inputRoute.maxLength = 4;
   var addRoute = function () {
     if ($inputRoute.value === "") {
@@ -147,11 +147,11 @@ function toggleLabels() {
 function vehicleLabel(route, direction) {
   var html = '<span class="vehicle-label">';
   if (direction === "in") {
-    html += "&lt;";
+    html += '<span class="dir-arrow">&#9664;</span>';
   }
-  html += route
+  html += '<span class="route-id">' + route + '</span>';
   if (direction === "out") {
-    html += "&gt;";
+    html += '<span class="dir-arrow">&#9654;</span>';
   }
   html += "</span>";
   return html;
