@@ -234,6 +234,7 @@ function getFeed() {
             }
 
             if (e.latitude && e.longitude) {
+              marker.stop(); // Cancel any in-progress animation before starting a new one
               marker.setLine([[marker.options.lastPosition.latitude, marker.options.lastPosition.longitude], [e.latitude, e.longitude]]);
               marker.options.lastPosition = {
                 latitude: e.latitude,
@@ -246,6 +247,7 @@ function getFeed() {
             marker = L.animatedMarker([[e.latitude, e.longitude]], {
               icon: icon,
               interval: REFRESH_INTERVAL - 1000, // Subtract 1 sec as buffer
+              autoStart: false, // Don't animate on add: icon size isn't finalised yet
               lastPosition: {
                 latitude: e.latitude,
                 longitude: e.longitude

@@ -109,13 +109,16 @@ L.AnimatedMarker = L.Marker.extend({
     if (L.DomUtil.TRANSITION) {
       // No need to to check up the line if we can animate using CSS3
       this._latlngs = latlngs;
+      // Start at index 1: the marker is already at latlngs[0], so skip the
+      // redundant snap-to-start step and animate immediately to latlngs[1].
+      this._i = 1;
     } else {
       // Chunk up the lines into options.distance bits
       this._latlngs = this._chunk(latlngs);
       this.options.distance = 10;
       this.options.interval = 30;
+      this._i = 0;
     }
-    this._i = 0;
   }
 
 });
