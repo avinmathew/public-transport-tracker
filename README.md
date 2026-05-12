@@ -6,25 +6,28 @@ Uses [GTFS Static](https://developers.google.com/transit/gtfs/) to provide vehic
 
 The application has only been tested with the [Translink South East QLD feed](https://gtfsrt.api.translink.com.au/).
 
-## Create database
+## Build the static GTFS database
 
-See `db` for SQL scripts to create tables, insert data (MySQL scripts for bulk loading data) and creating indexes for GTFS Static data.
+The app uses a local SQLite file (no database server required). Build it with:
 
-Note: drop indexes before bulk loading data.
+```sh
+npm run db:build
+```
 
-For MySQL 8+, allow local infile: `SET GLOBAL local_infile=1;`
+This downloads the SEQ GTFS zip from Translink, parses the CSV files, and writes `db/gtfs.sqlite`. Re-run whenever the static schedule data needs refreshing.
+
+The download URL can be overridden with the `GTFS_URL` environment variable, and the output path with `DB_PATH`.
 
 ## Environment variables
 
 Environment variables can either be supplied via command line or put in a `.env` file.
 
-* REALTIME_URL: GTFS Realtime URL, e.g. https://gtfsrt.api.translink.com.au/api/realtime/SEQ/VehiclePositions
-* DB_CLIENT: Knex database client, e.g. mysql
-* DB_HOST: Database server, e.g. localhost
-* DB_USER: Database user
-* DB_PASSWORD: Database user password
-* DB_DATABASE: Database name, e.g. translink_gtfs
-* PORT: Port to run Node.js server, e.g. 3000
+* `REALTIME_URL`: GTFS Realtime URL, e.g. `https://gtfsrt.api.translink.com.au/api/realtime/SEQ/VehiclePositions`
+* `DB_PATH`: Path to the SQLite database file. Defaults to `db/gtfs.sqlite` relative to the project root.
+* `GTFS_URL`: GTFS static zip URL used by `npm run db:build`. Defaults to the Translink SEQ feed.
+* `PORT`: Port to run the Node.js server on. Defaults to `3000`.
+
+**Requirements:** Node.js ≥ 22.5.0
 
 ## Browser query string
 

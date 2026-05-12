@@ -2,7 +2,8 @@ import "dotenv/config";
 
 import express from "express";
 import helmet from "helmet";
-import knex from "knex";
+import { DatabaseSync } from 'node:sqlite';
+import { fileURLToPath } from 'node:url';
 import { point as turf_point, polygon as turf_polygon } from "@turf/helpers"
 import booleanPointInPolygon from "@turf/boolean-point-in-polygon"
 import cachedFeed from "./cachedFeed.js";
@@ -14,15 +15,8 @@ const ROUTE_TYPE_LOOKUP = { 0: "tram", 2: "rail", 3: "bus", 4: "ferry" };
 // Period after the expected arrival of the vehicle to the stop to keep showing on the feed
 const DEFAULT_FEED_FILTER_TIME = 2; // minutes
 
-const knex_db = knex({
-  client: process.env.DB_CLIENT,
-  connection: {
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_DATABASE
-  }
-});
+const DB_PATH = process.env.DB_PATH || fileURLToPath(new URL('./db/gtfs.sqlite', import.meta.url));
+const db = new DatabaseSync(DB_PATH);
 
 const app = express();
 app.use(helmet());
@@ -59,14 +53,19 @@ app.get("/feed", async (req, res) => {
     });
 
     // Get direction and type of vehicle
-    // Wrap in try catch in case we can't contact DB, but we can still return GTFS data
+    // Wrap in try catch in case DB is unavailable; we can still return realtime-only data
     let trips = [];
     try {
-      trips = await knex_db
-        .select("trip_id", "direction_id", "shape_id", "route_short_name", "route_type")
-        .from("trips")
-        .innerJoin("routes", "routes.route_id", "trips.route_id")
-        .whereIn("trip_id", vehicles.map(v => v.tripId));
+      const tripIds = vehicles.map(v => v.tripId);
+      if (tripIds.length > 0) {
+        const placeholders = tripIds.map(() => '?').join(',');
+        trips = db.prepare(
+          `SELECT t.trip_id, t.direction_id, t.shape_id, r.route_short_name, r.route_type
+           FROM trips t
+           INNER JOIN routes r ON r.route_id = t.route_id
+           WHERE t.trip_id IN (${placeholders})`
+        ).all(...tripIds);
+      }
     } catch (err) {
       console.error(err);
     }
@@ -115,16 +114,18 @@ app.get("/feed-stops", async (req, res) => {
       to = [req.query.to];
     }
 
-    const trips = await knex_db
-      .select("t.trip_id", "r.route_short_name", "st1.departure_time", "s2.stop_name", "st2.arrival_time")
-      .from("trips as t")
-      .innerJoin("routes as r", "r.route_id", "t.route_id")
-      .innerJoin("stop_times as st1", "st1.trip_id", "t.trip_id")
-      .innerJoin("stops as s1", "s1.stop_id", "st1.stop_id")
-      .innerJoin("stop_times as st2", "st2.trip_id", "t.trip_id")
-      .innerJoin("stops as s2", "s2.stop_id", "st2.stop_id")
-      .where("s1.stop_code", from)
-      .whereIn("s2.stop_code", to);
+    const toPlaceholders = to.map(() => '?').join(',');
+    const trips = db.prepare(
+      `SELECT t.trip_id, r.route_short_name, st1.departure_time, s2.stop_name, st2.arrival_time
+       FROM trips t
+       INNER JOIN routes r ON r.route_id = t.route_id
+       INNER JOIN stop_times st1 ON st1.trip_id = t.trip_id
+       INNER JOIN stops s1 ON s1.stop_id = st1.stop_id
+       INNER JOIN stop_times st2 ON st2.trip_id = t.trip_id
+       INNER JOIN stops s2 ON s2.stop_id = st2.stop_id
+       WHERE s1.stop_code = ?
+       AND s2.stop_code IN (${toPlaceholders})`
+    ).all(from, ...to);
 
     vehicles = vehicles
       // Remove vehicles that aren't in the scheduled trips since we can't tell when they'll depart/arrive
@@ -221,15 +222,16 @@ app.get("/debug", async (req, res) => {
   try {
     let vehicles = await fileFeed.get();
 
-    const trips = await knex_db
-      .select("t.trip_id", "r.route_short_name", "st1.departure_time", "s2.stop_name", "st2.arrival_time")
-      .from("trips as t")
-      .innerJoin("routes as r", "r.route_id", "t.route_id")
-      .innerJoin("stop_times as st1", "st1.trip_id", "t.trip_id")
-      .innerJoin("stops as s1", "s1.stop_id", "st1.stop_id")
-      .innerJoin("stop_times as st2", "st2.trip_id", "t.trip_id")
-      .innerJoin("stops as s2", "s2.stop_id", "st2.stop_id")
-      .where("s1.stop_code", "005840");
+    const trips = db.prepare(
+      `SELECT t.trip_id, r.route_short_name, st1.departure_time, s2.stop_name, st2.arrival_time
+       FROM trips t
+       INNER JOIN routes r ON r.route_id = t.route_id
+       INNER JOIN stop_times st1 ON st1.trip_id = t.trip_id
+       INNER JOIN stops s1 ON s1.stop_id = st1.stop_id
+       INNER JOIN stop_times st2 ON st2.trip_id = t.trip_id
+       INNER JOIN stops s2 ON s2.stop_id = st2.stop_id
+       WHERE s1.stop_code = ?`
+    ).all('005840');
 
       vehicles = vehicles
       .map(v => {
