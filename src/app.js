@@ -117,6 +117,18 @@ var vehicleLayerLookup = {};
 
 map.on("zoom", toggleLabels);
 
+// On zoom, immediately clear CSS transitions so Leaflet's reprojection snaps
+// markers to their correct map position instead of animating from the old one.
+// Clear on both zoomstart (initial snap) and zoomend (catches any animate()
+// calls that fired mid-zoom and re-applied a transition).
+function clearAllMarkerTransitions() {
+  for (var id in vehicleLayerLookup) {
+    vehicleLayerLookup[id]._clearTransition();
+  }
+}
+map.on("zoomstart", clearAllMarkerTransitions);
+map.on("zoomend", clearAllMarkerTransitions);
+
 // Toggle labels depending on zoom level
 function toggleLabels() {
   var zoom = map.getZoom();

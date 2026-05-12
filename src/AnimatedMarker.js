@@ -97,6 +97,14 @@ L.AnimatedMarker = L.Marker.extend({
     }
   },
 
+  // Remove CSS transition so the next position update is instant (e.g. during zoom)
+  _clearTransition: function() {
+    if (L.DomUtil.TRANSITION) {
+      if (this._icon) { this._icon.style[L.DomUtil.TRANSITION] = ''; }
+      if (this._shadow) { this._shadow.style[L.DomUtil.TRANSITION] = ''; }
+    }
+  },
+
   setLine: function(latlngs){
     if (L.DomUtil.TRANSITION) {
       // No need to to check up the line if we can animate using CSS3
