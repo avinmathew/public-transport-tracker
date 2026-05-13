@@ -53,7 +53,15 @@ Prepare static, minified assets:
 
     npm run prepare
 
-Start server
+To start the server, either run `watch` or `start`.
+
+To watch asset sources and rebuild on changes:
+
+    npm run watch
+
+This runs `npm run prepare` once on startup, then rebuilds whenever files in `src` change.
+
+To start server with no watch:
 
     npm run start
     
