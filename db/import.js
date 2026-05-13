@@ -8,11 +8,11 @@
 import { DatabaseSync } from 'node:sqlite';
 import { createReadStream, existsSync } from 'node:fs';
 import { rm, mkdir } from 'node:fs/promises';
-import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 import fetch from 'node-fetch';
 import AdmZip from 'adm-zip';
+import { parse } from 'csv-parse';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -115,43 +115,16 @@ async function extractGTFS(buffer) {
 }
 
 // ---------------------------------------------------------------------------
-// CSV parsing (streaming, handles quoted fields)
-
-function parseCSVRow(line) {
-  const result = [];
-  let inQuote = false;
-  let current = '';
-  for (const ch of line) {
-    if (ch === '"') {
-      inQuote = !inQuote;
-    } else if (ch === ',' && !inQuote) {
-      result.push(current);
-      current = '';
-    } else {
-      current += ch;
-    }
-  }
-  result.push(current);
-  return result;
-}
+// CSV parsing (streaming via csv-parse for RFC4180 quoting support)
 
 async function* parseCSVStream(filePath) {
-  const rl = createInterface({
-    input: createReadStream(filePath),
-    crlfDelay: Infinity,
-  });
-  let headers = null;
-  for await (const line of rl) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const values = parseCSVRow(trimmed);
-    if (!headers) {
-      // Strip UTF-8 BOM from first header if present
-      headers = values.map((h, i) => (i === 0 ? h.replace(/^\uFEFF/, '') : h).trim());
-      continue;
-    }
-    const row = {};
-    headers.forEach((h, idx) => { row[h] = values[idx] ?? ''; });
+  const parser = createReadStream(filePath).pipe(parse({
+    bom: true,
+    columns: headers => headers.map(header => header.trim()),
+    skip_empty_lines: true,
+  }));
+
+  for await (const row of parser) {
     yield row;
   }
 }

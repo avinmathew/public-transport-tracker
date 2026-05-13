@@ -8,7 +8,7 @@ const CACHE_INVALIDATE_TIME = 10000;
 
 const cache = {
   date: null,
-  vehicles: null,
+  gtfs: null,
   refreshPromise: null
 };
 
@@ -19,10 +19,8 @@ export default function get () {
     cache.gtfs = null;
   }
   // If not invalidated, return cached vehicles
-  if (cache.vehicles) {
-    return new Promise((resolve, reject) => {
-      resolve(cache.gtfs);
-    });
+  if (cache.gtfs) {
+    return Promise.resolve(cache.gtfs);
   }
   // If in the process of refreshing, return existing promise
   if (cache.refreshPromise) {

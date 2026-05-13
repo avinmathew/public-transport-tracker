@@ -4,6 +4,8 @@ Displays vehicle data from a [GTFS (General Transit Feed Specification) Realtime
 
 Uses [GTFS Static](https://developers.google.com/transit/gtfs/) to provide vehicle type and direction data. GTFS Static data must be first stored in a database, while the Realtime data can be queried directly from an API provided by the transit provider.
 
+Realtime vehicle data is cached in memory for 10 seconds to avoid refetching the upstream feed on every request.
+
 The application has only been tested with the [Translink South East QLD feed](https://gtfsrt.api.translink.com.au/).
 
 ## Build the static GTFS database
@@ -22,12 +24,14 @@ The download URL can be overridden with the `GTFS_URL` environment variable, and
 
 Environment variables can either be supplied via command line or put in a `.env` file.
 
-* `REALTIME_URL`: GTFS Realtime URL, e.g. `https://gtfsrt.api.translink.com.au/api/realtime/SEQ/VehiclePositions`
+* `GTFS_REALTIME_URL`: GTFS Realtime URL, e.g. `https://gtfsrt.api.translink.com.au/api/realtime/SEQ/VehiclePositions`
 * `DB_PATH`: Path to the SQLite database file. Defaults to `db/gtfs.sqlite` relative to the project root.
 * `GTFS_URL`: GTFS static zip URL used by `npm run db:build`. Defaults to the Translink SEQ feed.
 * `PORT`: Port to run the Node.js server on. Defaults to `3000`.
 
-**Requirements:** Node.js ≥ 22.5.0
+## Requirements
+
+Node.js ≥ 22.5.0
 
 ## Browser query string
 
@@ -39,6 +43,18 @@ The browser supports the following query strings
 * z: initial zoom level of the map.
 * traffic: "on" or "off" to enable/disable traffic layer on startup
 
-## Run server
+## Development
 
-In development, start the server with `npm start` and visit <http://localhost:3000>.
+First build the database:
+
+    npm run db:build
+
+Prepare static, minified assets:
+
+    npm run prepare
+
+Start server
+
+    npm run start
+    
+Visit <http://localhost:3000>.

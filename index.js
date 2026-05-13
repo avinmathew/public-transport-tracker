@@ -143,7 +143,10 @@ app.get("/feed-stops", async (req, res) => {
         }
       });
     // Max Delay is used to conservatively filter out vehicles that have already "arrived" at the "from" stop
-    const maxDelay = vehicles.reduce((prev, curr) => curr.delay > prev.delay ? curr : prev, 0).delay / 60 + DEFAULT_FEED_FILTER_TIME;
+    const maxDelay = vehicles.reduce((maxDelayInMins, vehicle) => {
+      const vehicleDelayInMins = Number.isFinite(vehicle.delay) ? vehicle.delay / 60 : 0;
+      return Math.max(maxDelayInMins, vehicleDelayInMins);
+    }, 0) + DEFAULT_FEED_FILTER_TIME;
     let earliestArrival = "99:99";
     vehicles = vehicles
       .map(v => {
@@ -217,54 +220,6 @@ app.get("/feed-stops", async (req, res) => {
     res.json(err);
   }
 });
-
-app.get("/debug", async (req, res) => {
-  try {
-    let vehicles = await fileFeed.get();
-
-    const trips = db.prepare(
-      `SELECT t.trip_id, r.route_short_name, st1.departure_time, s2.stop_name, st2.arrival_time
-       FROM trips t
-       INNER JOIN routes r ON r.route_id = t.route_id
-       INNER JOIN stop_times st1 ON st1.trip_id = t.trip_id
-       INNER JOIN stops s1 ON s1.stop_id = st1.stop_id
-       INNER JOIN stop_times st2 ON st2.trip_id = t.trip_id
-       INNER JOIN stops s2 ON s2.stop_id = st2.stop_id
-       WHERE s1.stop_code = ?`
-    ).all('005840');
-
-      vehicles = vehicles
-      .map(v => {
-        const trip = trips.find(t => t.trip_id === v.tripId) || {};
-        let status;
-        if (trip.trip_id) {
-          status = "1 Match";
-        } else if (["P129", "P137", "P141", "P151"].includes(v.route)) {
-          status = "2 Missing match";
-        } else {
-          status = "3 No match"
-        }
-        return {
-          route: v.route,
-          tripId: v.tripId,
-          status
-        }
-      });
-    vehicles.sort((a, b) => a.tripId.localeCompare(b.tripId));
-    vehicles.sort((a, b) => a.status.localeCompare(b.status));
-    vehicles = vehicles
-      .map(v => {
-        return `<tr><td>${v.route}</td><td>${v.tripId}</td><td>${v.status}</td></tr>`
-      });
-
-    res.send("<table><thead><th>Route</th><th>Trip Id</th><th>Match Status</th></thead><tbody>" + vehicles.join("") + "</tbody></table>");
-  } catch (err) {
-    console.error(err);
-    res.status(500);
-    res.json(err);
-  }
-});
-
 
 const port = parseInt(process.env.PORT, 10) || 3000;
 app.listen(port, () => console.log(`Listening on port ${port}`));

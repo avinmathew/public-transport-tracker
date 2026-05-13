@@ -158,6 +158,10 @@ function vehicleLabel(route, direction) {
 }
 
 function delayLabel(delay) {
+  if (!Number.isFinite(delay) || delay === 0) {
+    return "";
+  }
+
   var minutes = Math.floor(Math.abs(delay) / 60);
   var seconds = Math.abs(delay) - minutes * 60;
   var label = "";
@@ -167,7 +171,7 @@ function delayLabel(delay) {
   if (seconds) {
     label += seconds.toString() + "s";
   }
-  if (!minutes || !seconds) {
+  if (!label) {
     return "";
   }
   return '<span class="delay-label ' + (delay > 0 ? "late" : "early") + '">' + label + "</span>";
