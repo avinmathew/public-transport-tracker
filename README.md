@@ -2,6 +2,8 @@
 
 Displays vehicle data from a [GTFS (General Transit Feed Specification) Realtime](https://developers.google.com/transit/gtfs-realtime/) feed on a map. The map uses a Google Maps basemap with the traffic layer turned on.
 
+The map can also show stops within the current viewport as clickable circles. Stop results respect the active route filters, and each stop opens a mobile-friendly timetable panel showing the next 2 hours of services from a selected date/time. When a matching trip is currently operating, its live delay is shown alongside the scheduled time.
+
 Uses [GTFS Static](https://developers.google.com/transit/gtfs/) to provide vehicle type and direction data. GTFS Static data must be first stored in a database, while the Realtime data can be queried directly from an API provided by the transit provider.
 
 Realtime vehicle data is cached in memory for 10 seconds to avoid refetching the upstream feed on every request.
@@ -17,6 +19,8 @@ npm run db:build
 ```
 
 This downloads the SEQ GTFS zip from Translink, parses the CSV files, and writes `db/gtfs.sqlite`. Re-run whenever the static schedule data needs refreshing.
+
+If you pull a version of the app with stop timetables for the first time, rebuild the GTFS database so the `calendar` and `calendar_dates` tables are present.
 
 The download URL can be overridden with the `GTFS_URL` environment variable, and the output path with `DB_PATH`.
 

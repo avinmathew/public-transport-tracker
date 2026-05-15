@@ -3,10 +3,223 @@ var LATLNG_DECIMAL_PLACES = 5;
 var REFRESH_UPDATE_INTERVAL = 1000; // ms, how often to update countdown timer
 var REFRESH_INTERVAL = 15000; // ms
 var LABEL_SHOW_ZOOM_LEVEL = 12;
+var STOP_WINDOW_MINUTES = 120;
+var STOP_PANEL_REFRESH_INTERVAL = 30000;
+var STOP_MARKER_RADIUS = 6;
 
 var $refreshStatus = document.getElementById("refresh");
+var $stopPanelBackdrop = document.getElementById("stop-panel-backdrop");
+var $stopPanel = document.getElementById("stop-panel");
+var $stopPanelClose = document.getElementById("stop-panel-close");
+var $stopPanelName = document.getElementById("stop-panel-name");
+var $stopPanelMeta = document.getElementById("stop-panel-meta");
+var $stopPanelRoutes = document.getElementById("stop-panel-routes");
+var $stopPanelStatus = document.getElementById("stop-panel-status");
+var $stopPanelForm = document.getElementById("stop-panel-form");
+var $stopDateTime = document.getElementById("stop-date-time");
+var $stopPanelResults = document.getElementById("stop-panel-results");
 
 var search = URI().search(true);
+var stopLayerLookup = {};
+var selectedStopId = null;
+var selectedStopData = null;
+var isFetchingStops = false;
+var stopRequestController = null;
+var stopTimesRequestController = null;
+var stopPanelRefreshHandle = null;
+
+function toDateTimeLocalValue(date) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0")
+  ].join("-") + "T" + [
+    String(date.getHours()).padStart(2, "0"),
+    String(date.getMinutes()).padStart(2, "0")
+  ].join(":");
+}
+
+function describeDelay(delaySeconds, live) {
+  if (!live) {
+    return "Scheduled";
+  }
+  if (!Number.isFinite(delaySeconds) || delaySeconds === 0) {
+    return "On time";
+  }
+
+  var minutes = Math.round(Math.abs(delaySeconds) / 60);
+  if (!minutes) {
+    minutes = 1;
+  }
+  return minutes + "m " + (delaySeconds > 0 ? "late" : "early");
+}
+
+function buildBoundsUrl(path) {
+  var url = URI(path);
+  var bounds = map.getBounds();
+  url = url.addSearch("neLat", bounds.getNorthEast().lat.toFixed(6));
+  url = url.addSearch("neLng", bounds.getNorthEast().lng.toFixed(6));
+  url = url.addSearch("swLat", bounds.getSouthWest().lat.toFixed(6));
+  url = url.addSearch("swLng", bounds.getSouthWest().lng.toFixed(6));
+  var currentSearch = URI().search(true);
+  if (currentSearch.routes) {
+    url = url.addSearch("routes", currentSearch.routes);
+  }
+  return url;
+}
+
+function stopMarkerStyle(isSelected) {
+  return {
+    radius: isSelected ? STOP_MARKER_RADIUS + 2 : STOP_MARKER_RADIUS,
+    color: isSelected ? "#7c2d12" : "#7c2d12",
+    weight: isSelected ? 3 : 2,
+    fillColor: isSelected ? "#facc15" : "#fb923c",
+    fillOpacity: isSelected ? 0.98 : 0.92
+  };
+}
+
+function setStopMarkerStyle(marker, isSelected) {
+  marker.setStyle(stopMarkerStyle(isSelected));
+}
+
+function refreshSelectedStopMarker() {
+  Object.keys(stopLayerLookup).forEach(function (id) {
+    setStopMarkerStyle(stopLayerLookup[id], id === selectedStopId);
+  });
+}
+
+function setStopPanelStatus(message, type) {
+  $stopPanelStatus.className = "stop-panel-status" + (type ? " " + type : "");
+  $stopPanelStatus.textContent = message || "";
+}
+
+function closeStopPanel() {
+  selectedStopId = null;
+  selectedStopData = null;
+  refreshSelectedStopMarker();
+  $stopPanel.classList.remove("open");
+  $stopPanelBackdrop.classList.remove("open");
+  $stopPanel.setAttribute("aria-hidden", "true");
+  setStopPanelStatus("");
+  $stopPanelResults.innerHTML = "";
+  if (stopTimesRequestController) {
+    stopTimesRequestController.abort();
+    stopTimesRequestController = null;
+  }
+  if (stopPanelRefreshHandle) {
+    clearInterval(stopPanelRefreshHandle);
+    stopPanelRefreshHandle = null;
+  }
+}
+
+function ensureStopPanelRefresh() {
+  if (stopPanelRefreshHandle) {
+    clearInterval(stopPanelRefreshHandle);
+  }
+  stopPanelRefreshHandle = setInterval(function () {
+    if (selectedStopId) {
+      loadStopTimes();
+    }
+  }, STOP_PANEL_REFRESH_INTERVAL);
+}
+
+function renderStopPanel(result) {
+  var services = result.services || [];
+  if (!services.length) {
+    $stopPanelResults.innerHTML = '<tr><td colspan="4" class="stop-panel-empty">No services in this time window.</td></tr>';
+    setStopPanelStatus("Showing the next 2 hours from the selected time.");
+    return;
+  }
+
+  $stopPanelResults.innerHTML = services.map(function (service) {
+    var timeHtml = service.expectedTime && service.expectedTime !== service.scheduledTime ?
+      '<div class="time-primary">' + service.expectedTime + '</div><div class="time-secondary">Sched ' + service.scheduledTime + '</div>' :
+      '<div class="time-primary">' + service.scheduledTime + '</div>';
+    var delayText = describeDelay(service.delaySeconds, service.live);
+    return (
+      '<tr class="' + (service.live ? 'live-service' : 'scheduled-service') + '">' +
+        '<td class="route-cell">' + service.route + '</td>' +
+        '<td class="time-cell">' + timeHtml + '</td>' +
+        '<td class="delay-cell">' + delayText + '</td>' +
+        '<td class="headsign-cell">' + (service.headsign || '') + '</td>' +
+      '</tr>'
+    );
+  }).join("");
+  setStopPanelStatus("Showing the next 2 hours from the selected time.");
+}
+
+function loadStopTimes() {
+  if (!selectedStopData) {
+    return;
+  }
+
+  if (stopTimesRequestController) {
+    stopTimesRequestController.abort();
+  }
+  stopTimesRequestController = new AbortController();
+
+  var url = URI("stop-times")
+    .addSearch("stopId", selectedStopData.id)
+    .addSearch("windowMins", STOP_WINDOW_MINUTES)
+    .addSearch("dateTime", $stopDateTime.value || toDateTimeLocalValue(new Date()));
+  var currentSearch = URI().search(true);
+  if (currentSearch.routes) {
+    url = url.addSearch("routes", currentSearch.routes);
+  }
+
+  setStopPanelStatus("Loading departures...", "loading");
+
+  return fetch(url.toString(), { signal: stopTimesRequestController.signal })
+    .then(function (response) {
+      return response.json().then(function (result) {
+        if (response.status !== 200) {
+          throw new Error(result.error || result.message || "Unable to load stop timetable");
+        }
+        return result;
+      });
+    })
+    .then(function (result) {
+      $stopPanelName.textContent = result.stop.name;
+      $stopPanelMeta.textContent = result.stop.code ? "Stop " + result.stop.code : "Stop timetable";
+      renderStopPanel(result);
+    })
+    .catch(function (err) {
+      if (err.name === "AbortError") {
+        return;
+      }
+      $stopPanelResults.innerHTML = '<tr><td colspan="4" class="stop-panel-empty">' + err.message + '</td></tr>';
+      setStopPanelStatus("Could not load timetable.", "error");
+      console.error(err);
+    });
+}
+
+function openStopPanel(stopData) {
+  selectedStopId = stopData.id;
+  selectedStopData = stopData;
+  refreshSelectedStopMarker();
+  $stopPanel.classList.add("open");
+  $stopPanelBackdrop.classList.add("open");
+  $stopPanel.setAttribute("aria-hidden", "false");
+  $stopPanelName.textContent = stopData.name;
+  $stopPanelMeta.textContent = stopData.code ? "Stop " + stopData.code : "Stop timetable";
+  $stopPanelRoutes.innerHTML = (stopData.routes || []).map(function (route) {
+    return '<span class="route-chip">' + route + '</span>';
+  }).join("");
+  if (!$stopDateTime.value) {
+    $stopDateTime.value = toDateTimeLocalValue(new Date());
+  }
+  loadStopTimes();
+  ensureStopPanelRefresh();
+}
+
+function syncVisibleData() {
+  remaining = 0;
+  getFeed();
+  getStops();
+  if (selectedStopId) {
+    loadStopTimes();
+  }
+}
 
 // Setup routes panel
 function refreshRoutesPanel() {
@@ -32,6 +245,7 @@ function refreshRoutesPanel() {
       var url = URI().setSearch({routes: newRoutes.join(",")});
       window.history.pushState("", "", url.toString());
       refreshRoutesPanel();
+      syncVisibleData();
     };
     $routes.appendChild($route);
   });
@@ -54,6 +268,7 @@ function refreshRoutesPanel() {
     var url = URI().setSearch({routes: routes.join(",")});
     window.history.pushState("", "", url.toString());
     refreshRoutesPanel();
+    syncVisibleData();
   };
   $inputRoute.onfocus = function () {
     // On Android, selecting input triggers a resize event which then rerenders the panel and creates a new input,
@@ -69,7 +284,7 @@ function refreshRoutesPanel() {
       window.onresize = refreshRoutesPanel;
       addRoute();
     }
-  }
+  };
   $routes.appendChild($inputRoute);
 
   // Center panel
@@ -95,7 +310,7 @@ if (navigator.geolocation && !(search.lat && search.lng)) {
   });
 }
 
-map.on("moveend", function (e) {
+map.on("moveend", function () {
   var latlng = map.getCenter();
   var url = URI().setSearch({
     lat: latlng.lat.toFixed(LATLNG_DECIMAL_PLACES),
@@ -105,6 +320,7 @@ map.on("moveend", function (e) {
   window.history.pushState("", "", url.toString());
   remaining = 0;
   getFeed();
+  getStops();
 });
 
 // Add base map
@@ -112,6 +328,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 var shapeGroup = L.layerGroup().addTo(map);
 var layerGroup = L.layerGroup().addTo(map);
+var stopLayerGroup = L.layerGroup().addTo(map);
 
 var vehicleLayerLookup = {};
 
@@ -183,11 +400,75 @@ function createIcon(routeType, route, direction, delay) {
   if (delayLbl) {
     label += '<div class="delay-cont">' + delayLabel(delay) + "</div>";
   }
-  var icon = L.divIcon({
+  return L.divIcon({
     className: "div-icon " + routeType,
     html: label
   });
-  return icon;
+}
+
+function getStops() {
+  if (isFetchingStops && stopRequestController) {
+    stopRequestController.abort();
+  }
+
+  isFetchingStops = true;
+  stopRequestController = new AbortController();
+
+  return fetch(buildBoundsUrl("stops").toString(), { signal: stopRequestController.signal })
+    .then(function (response) {
+      if (response.status !== 200) {
+        throw new Error("Unable to load stops");
+      }
+      return response.json();
+    })
+    .then(function (stops) {
+      var visibleStopIds = {};
+
+      stops.forEach(function (stop) {
+        var marker = stopLayerLookup[stop.id];
+        visibleStopIds[stop.id] = true;
+
+        if (!marker) {
+          marker = L.circleMarker([stop.latitude, stop.longitude], {
+            className: "stop-circle",
+            ...stopMarkerStyle(stop.id === selectedStopId)
+          });
+          marker.on("click", function () {
+            openStopPanel(marker.options.stopData);
+          });
+          marker.addTo(stopLayerGroup);
+          stopLayerLookup[stop.id] = marker;
+        } else {
+          marker.setLatLng([stop.latitude, stop.longitude]);
+        }
+
+        marker.options.stopData = stop;
+      });
+
+      Object.keys(stopLayerLookup).forEach(function (stopId) {
+        if (visibleStopIds[stopId]) {
+          return;
+        }
+        stopLayerLookup[stopId].remove();
+        delete stopLayerLookup[stopId];
+        if (selectedStopId === stopId) {
+          closeStopPanel();
+        }
+      });
+
+      if (selectedStopId && stopLayerLookup[selectedStopId]) {
+        selectedStopData = stopLayerLookup[selectedStopId].options.stopData;
+      }
+      refreshSelectedStopMarker();
+      isFetchingStops = false;
+    })
+    .catch(function (err) {
+      isFetchingStops = false;
+      if (err.name === "AbortError") {
+        return;
+      }
+      console.error(err);
+    });
 }
 
 var isFetching = false;
@@ -206,17 +487,7 @@ function getFeed() {
   isFetching = true;
 
   $refreshStatus.innerHTML = "Updating";
-  var feedUrl = URI("feed");
-  var bounds = map.getBounds();
-  feedUrl = feedUrl.addSearch("neLat", bounds.getNorthEast().lat.toFixed(6));
-  feedUrl = feedUrl.addSearch("neLng", bounds.getNorthEast().lng.toFixed(6));
-  feedUrl = feedUrl.addSearch("swLat", bounds.getSouthWest().lat.toFixed(6));
-  feedUrl = feedUrl.addSearch("swLng", bounds.getSouthWest().lng.toFixed(6));
-  var search = URI().search(true);
-  if (search.routes) {
-    feedUrl = feedUrl.addSearch("routes", search.routes);
-  }
-  return fetch(feedUrl.toString())
+  return fetch(buildBoundsUrl("feed").toString())
     .then(function (response) {
       if (response.status !== 200) {
         return;
@@ -243,7 +514,7 @@ function getFeed() {
               marker.options.lastPosition = {
                 latitude: e.latitude,
                 longitude: e.longitude
-              }
+              };
               marker.start();
             }
           } else { // Create marker
@@ -267,7 +538,7 @@ function getFeed() {
         });
 
         // Remove vehicles no longer in feed
-        var entityIds = entities.map(function (e) { return e.id });
+        var entityIds = entities.map(function (e) { return e.id; });
         var layerIds = Object.keys(vehicleLayerLookup);
         var layersToRemove = layerIds.filter(function (l) { return !entityIds.includes(l); });
         layersToRemove.forEach(function (l) {
@@ -298,5 +569,20 @@ function getFeed() {
       console.error(e);
     });
 }
+
+$stopDateTime.value = toDateTimeLocalValue(new Date());
+$stopPanelClose.onclick = closeStopPanel;
+$stopPanelBackdrop.onclick = closeStopPanel;
+$stopPanelForm.onsubmit = function (e) {
+  e.preventDefault();
+  loadStopTimes();
+};
+window.addEventListener("keydown", function (e) {
+  if (e.key === "Escape") {
+    closeStopPanel();
+  }
+});
+
 getFeed();
+getStops();
 setInterval(getFeed, REFRESH_UPDATE_INTERVAL);

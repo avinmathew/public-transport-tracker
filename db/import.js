@@ -8,6 +8,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { createReadStream, existsSync } from 'node:fs';
 import { rm, mkdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 import fetch from 'node-fetch';
@@ -18,13 +19,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const GTFS_URL = process.env.GTFS_URL || 'https://gtfsrt.api.translink.com.au/GTFS/SEQ_GTFS.zip';
 const DB_PATH = process.env.DB_PATH || join(__dirname, 'gtfs.sqlite');
-const TMP_DIR = join(__dirname, '.gtfs_tmp');
+const TMP_DIR = process.env.GTFS_TMP_DIR || join(tmpdir(), 'public-transport-tracker-gtfs');
 const BATCH_SIZE = 10_000;
 
 const SCHEMA = `
+DROP TABLE IF EXISTS stop_routes;
 DROP TABLE IF EXISTS stop_times;
 DROP TABLE IF EXISTS trips;
 DROP TABLE IF EXISTS stops;
+DROP TABLE IF EXISTS calendar_dates;
+DROP TABLE IF EXISTS calendar;
 DROP TABLE IF EXISTS shapes;
 DROP TABLE IF EXISTS routes;
 
@@ -60,6 +64,25 @@ CREATE TABLE stops (
   platform_code   TEXT
 );
 
+CREATE TABLE calendar (
+  service_id  TEXT PRIMARY KEY,
+  monday      INTEGER,
+  tuesday     INTEGER,
+  wednesday   INTEGER,
+  thursday    INTEGER,
+  friday      INTEGER,
+  saturday    INTEGER,
+  sunday      INTEGER,
+  start_date  TEXT,
+  end_date    TEXT
+);
+
+CREATE TABLE calendar_dates (
+  service_id      TEXT,
+  date            TEXT,
+  exception_type  INTEGER
+);
+
 CREATE TABLE trips (
   route_id      TEXT,
   service_id    TEXT,
@@ -80,13 +103,38 @@ CREATE TABLE stop_times (
   drop_off_type   TEXT
 );
 
+CREATE TABLE stop_routes (
+  stop_id           TEXT,
+  route_short_name  TEXT,
+  PRIMARY KEY (stop_id, route_short_name)
+);
+
 CREATE INDEX ix_shapes_shape_id    ON shapes    (shape_id);
 CREATE INDEX ix_trips_covering     ON trips     (trip_id, route_id, direction_id, shape_id);
 CREATE INDEX ix_stop_times_trip_id ON stop_times (trip_id);
 CREATE INDEX ix_stop_times_stop_id ON stop_times (stop_id);
+CREATE INDEX ix_stops_lat_lon      ON stops     (stop_lat, stop_lon);
 CREATE INDEX ix_stops_stop_id      ON stops     (stop_id);
 CREATE INDEX ix_stops_stop_code    ON stops     (stop_code);
+CREATE INDEX ix_stop_routes_route  ON stop_routes (route_short_name, stop_id);
+CREATE INDEX ix_calendar_dates_sid ON calendar_dates (service_id, date, exception_type);
+CREATE INDEX ix_calendar_dates_date ON calendar_dates (date, exception_type);
 `;
+
+function buildStopRoutes(db) {
+  console.log('Building stop_routes lookup...');
+  db.exec(`
+    INSERT INTO stop_routes (stop_id, route_short_name)
+    SELECT DISTINCT st.stop_id, r.route_short_name
+    FROM stop_times st
+    INNER JOIN trips t ON t.trip_id = st.trip_id
+    INNER JOIN routes r ON r.route_id = t.route_id
+    WHERE r.route_short_name IS NOT NULL
+    AND r.route_short_name != ''
+  `);
+  const rowCount = db.prepare('SELECT COUNT(*) AS count FROM stop_routes').get().count;
+  console.log(`  stop_routes: ${rowCount.toLocaleString()} rows built`);
+}
 
 // ---------------------------------------------------------------------------
 // Download
@@ -188,6 +236,13 @@ async function main() {
     'stop_lat', 'stop_lon', 'zone_id', 'stop_url',
     'location_type', 'parent_station', 'platform_code',
   ]);
+  await importTable(db, 'calendar', join(TMP_DIR, 'calendar.txt'), [
+    'service_id', 'monday', 'tuesday', 'wednesday', 'thursday',
+    'friday', 'saturday', 'sunday', 'start_date', 'end_date',
+  ]);
+  await importTable(db, 'calendar_dates', join(TMP_DIR, 'calendar_dates.txt'), [
+    'service_id', 'date', 'exception_type',
+  ]);
   await importTable(db, 'trips', join(TMP_DIR, 'trips.txt'), [
     'route_id', 'service_id', 'trip_id', 'trip_headsign',
     'direction_id', 'block_id', 'shape_id',
@@ -196,6 +251,7 @@ async function main() {
     'trip_id', 'arrival_time', 'departure_time', 'stop_id',
     'stop_sequence', 'pickup_type', 'drop_off_type',
   ]);
+  buildStopRoutes(db);
 
   db.close();
   await rm(TMP_DIR, { recursive: true });

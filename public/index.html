@@ -16,6 +16,39 @@
   <div id="map"></div>
   <div id="refresh" class="leaflet-bar"></div>
   <div id="routes" class="leaflet-bar"></div>
+  <button id="stop-panel-backdrop" class="stop-panel-backdrop" type="button" aria-label="Close stop details"></button>
+  <section id="stop-panel" class="stop-panel" aria-hidden="true">
+    <div class="stop-panel-handle"></div>
+    <div class="stop-panel-header">
+      <div>
+        <h2 id="stop-panel-name">Stop timetable</h2>
+        <p id="stop-panel-meta"></p>
+      </div>
+      <button id="stop-panel-close" class="stop-panel-close" type="button" aria-label="Close stop details">Close</button>
+    </div>
+    <div id="stop-panel-routes" class="stop-panel-routes"></div>
+    <form id="stop-panel-form" class="stop-panel-form">
+      <div>
+        <label for="stop-date-time">Start time</label>
+        <input id="stop-date-time" type="datetime-local"></input>
+      </div>
+      <button type="submit">Update</button>
+    </form>
+    <div id="stop-panel-status" class="stop-panel-status"></div>
+    <div class="stop-panel-table-wrap">
+      <table class="stop-panel-table">
+        <thead>
+          <tr>
+            <th>Route</th>
+            <th>Time</th>
+            <th>Delay</th>
+            <th>Destination</th>
+          </tr>
+        </thead>
+        <tbody id="stop-panel-results"></tbody>
+      </table>
+    </div>
+  </section>
   <script src="AnimatedMarker.min.js"></script>
   <script src="app.min.js"></script>
 </body>

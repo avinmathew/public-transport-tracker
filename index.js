@@ -11,12 +11,184 @@ import padLeft from "./padLeft.js";
 
 const DIRECTION_LOOKUP = { 0: "in", 1: "out" };
 const ROUTE_TYPE_LOOKUP = { 0: "tram", 2: "rail", 3: "bus", 4: "ferry" };
+const DAY_COLUMN_LOOKUP = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
 // Period after the expected arrival of the vehicle to the stop to keep showing on the feed
 const DEFAULT_FEED_FILTER_TIME = 2; // minutes
+const DEFAULT_STOP_WINDOW_MINUTES = 120;
 
 const DB_PATH = process.env.DB_PATH || fileURLToPath(new URL('./db/gtfs.sqlite', import.meta.url));
 const db = new DatabaseSync(DB_PATH);
+const dbTables = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map(row => row.name));
+const hasScheduleCalendar = dbTables.has("calendar") && dbTables.has("calendar_dates");
+const hasStopRoutes = dbTables.has("stop_routes");
+const activeServiceIdsCache = new Map();
+
+function splitCsvParam(value) {
+  if (!value) {
+    return [];
+  }
+  return value
+    .split(",")
+    .map(v => v.trim())
+    .filter(Boolean);
+}
+
+function formatServiceDate(date) {
+  return `${date.getFullYear()}${padLeft(date.getMonth() + 1, "0", 2)}${padLeft(date.getDate(), "0", 2)}`;
+}
+
+function parseDateTimeQuery(query) {
+  const now = new Date();
+
+  if (query.dateTime) {
+    const selected = new Date(query.dateTime);
+    return Number.isNaN(selected.getTime()) ? null : selected;
+  }
+
+  if (query.date || query.time) {
+    const date = query.date || `${now.getFullYear()}-${padLeft(now.getMonth() + 1, "0", 2)}-${padLeft(now.getDate(), "0", 2)}`;
+    const time = query.time || `${padLeft(now.getHours(), "0", 2)}:${padLeft(now.getMinutes(), "0", 2)}`;
+    const selected = new Date(`${date}T${time}`);
+    return Number.isNaN(selected.getTime()) ? null : selected;
+  }
+
+  return now;
+}
+
+function gtfsTimeToMinutes(value) {
+  if (!value) {
+    return null;
+  }
+
+  const parts = value.split(":");
+  if (parts.length < 2) {
+    return null;
+  }
+
+  const hours = Number.parseInt(parts[0], 10);
+  const minutes = Number.parseInt(parts[1], 10);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+    return null;
+  }
+
+  return hours * 60 + minutes;
+}
+
+function formatDisplayTime(totalMinutes) {
+  const minutesInDay = 24 * 60;
+  const normalized = ((totalMinutes % minutesInDay) + minutesInDay) % minutesInDay;
+  const hours = Math.floor(normalized / 60);
+  const minutes = normalized % 60;
+  const dayOffset = totalMinutes >= minutesInDay ? Math.floor(totalMinutes / minutesInDay) : 0;
+  const suffix = dayOffset > 0 ? ` (+${dayOffset})` : "";
+  return `${padLeft(hours, "0", 2)}:${padLeft(minutes, "0", 2)}${suffix}`;
+}
+
+function formatStopTimeForDisplay(value) {
+  const totalMinutes = gtfsTimeToMinutes(value);
+  if (totalMinutes === null) {
+    return null;
+  }
+  return formatDisplayTime(totalMinutes);
+}
+
+function stopDisplayName(stop) {
+  if (stop.platform_code) {
+    return `${stop.stop_name} Platform ${stop.platform_code}`;
+  }
+  return stop.stop_name;
+}
+
+function isSameLocalDate(a, b) {
+  return a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate();
+}
+
+function getActiveServiceIds(serviceDate) {
+  if (!hasScheduleCalendar) {
+    return null;
+  }
+
+  const serviceDateKey = formatServiceDate(serviceDate);
+  if (activeServiceIdsCache.has(serviceDateKey)) {
+    return activeServiceIdsCache.get(serviceDateKey);
+  }
+
+  const dayColumn = DAY_COLUMN_LOOKUP[serviceDate.getDay()];
+  const regularRows = db.prepare(
+    `SELECT service_id
+     FROM calendar
+     WHERE start_date <= ?
+     AND end_date >= ?
+     AND ${dayColumn} = 1`
+  ).all(serviceDateKey, serviceDateKey);
+  const exceptionRows = db.prepare(
+    `SELECT service_id, exception_type
+     FROM calendar_dates
+     WHERE date = ?`
+  ).all(serviceDateKey);
+
+  const activeServiceIds = new Set(regularRows.map(row => row.service_id));
+  exceptionRows.forEach(row => {
+    if (Number(row.exception_type) === 1) {
+      activeServiceIds.add(row.service_id);
+    }
+    if (Number(row.exception_type) === 2) {
+      activeServiceIds.delete(row.service_id);
+    }
+  });
+
+  const serviceIds = Array.from(activeServiceIds);
+  activeServiceIdsCache.set(serviceDateKey, serviceIds);
+  return serviceIds;
+}
+
+function queryStopSchedule(stopId, routes, serviceDate, startMinutes, endMinutes) {
+  const serviceIds = getActiveServiceIds(serviceDate);
+  if (!serviceIds || !serviceIds.length) {
+    return [];
+  }
+
+  const params = [stopId, ...serviceIds];
+  let sql =
+    `SELECT st.trip_id,
+            COALESCE(st.departure_time, st.arrival_time) AS stop_time,
+            st.arrival_time,
+            st.departure_time,
+            t.trip_headsign,
+            r.route_short_name
+     FROM stop_times st
+     INNER JOIN trips t ON t.trip_id = st.trip_id
+     INNER JOIN routes r ON r.route_id = t.route_id
+     WHERE st.stop_id = ?
+     AND t.service_id IN (${serviceIds.map(() => "?").join(",")})`;
+
+  if (routes.length) {
+    sql += ` AND r.route_short_name IN (${routes.map(() => "?").join(",")})`;
+    params.push(...routes);
+  }
+
+  sql += ` ORDER BY COALESCE(st.departure_time, st.arrival_time), r.route_short_name, t.trip_headsign`;
+
+  return db.prepare(sql).all(...params)
+    .map(row => {
+      const scheduledMinutes = gtfsTimeToMinutes(row.stop_time);
+      if (scheduledMinutes === null || scheduledMinutes < startMinutes || scheduledMinutes > endMinutes) {
+        return null;
+      }
+
+      return {
+        tripId: row.trip_id,
+        route: row.route_short_name,
+        headsign: row.trip_headsign,
+        scheduledMinutes,
+        scheduledTime: formatStopTimeForDisplay(row.stop_time)
+      };
+    })
+    .filter(Boolean);
+}
 
 const app = express();
 app.use(helmet());
@@ -24,10 +196,7 @@ app.use(express.static("public"));
 
 app.get("/feed", async (req, res) => {
   try {
-    let routes = [];
-    if (req.query.routes) {
-      routes = req.query.routes.split(",");
-    }
+    let routes = splitCsvParam(req.query.routes);
     if (!req.query.neLat || !req.query.neLng || !req.query.swLat || !req.query.swLng) {
       res.status(400);
       return res.send("Unspecified boundary parameters");
@@ -85,6 +254,182 @@ app.get("/feed", async (req, res) => {
     });
 
     res.json(vehicles);
+  } catch (err) {
+    console.error(err);
+    res.status(500);
+    res.json(err);
+  }
+});
+
+app.get("/stops", (req, res) => {
+  try {
+    if (!req.query.neLat || !req.query.neLng || !req.query.swLat || !req.query.swLng) {
+      res.status(400);
+      return res.send("Unspecified boundary parameters");
+    }
+
+    const routes = splitCsvParam(req.query.routes);
+    const params = [
+      Number.parseFloat(req.query.swLat),
+      Number.parseFloat(req.query.neLat),
+      Number.parseFloat(req.query.swLng),
+      Number.parseFloat(req.query.neLng)
+    ];
+    let sql;
+    if (hasStopRoutes) {
+      sql =
+        `SELECT s.stop_id,
+                s.stop_code,
+                s.stop_name,
+                s.platform_code,
+                s.stop_lat,
+                s.stop_lon,
+                GROUP_CONCAT(sr.route_short_name) AS route_names
+         FROM stops s
+         INNER JOIN stop_routes sr ON sr.stop_id = s.stop_id
+         WHERE s.stop_lat BETWEEN ? AND ?
+         AND s.stop_lon BETWEEN ? AND ?
+         AND (s.location_type IS NULL OR s.location_type = '' OR s.location_type = '0')`;
+
+      if (routes.length) {
+        sql += ` AND sr.route_short_name IN (${routes.map(() => "?").join(",")})`;
+        params.push(...routes);
+      }
+
+      sql += ` GROUP BY s.stop_id, s.stop_code, s.stop_name, s.platform_code, s.stop_lat, s.stop_lon
+               ORDER BY s.stop_name`;
+    } else {
+      sql =
+        `SELECT s.stop_id,
+                s.stop_code,
+                s.stop_name,
+                s.platform_code,
+                s.stop_lat,
+                s.stop_lon,
+                GROUP_CONCAT(DISTINCT r.route_short_name) AS route_names
+         FROM stops s
+         INNER JOIN stop_times st ON st.stop_id = s.stop_id
+         INNER JOIN trips t ON t.trip_id = st.trip_id
+         INNER JOIN routes r ON r.route_id = t.route_id
+         WHERE s.stop_lat BETWEEN ? AND ?
+         AND s.stop_lon BETWEEN ? AND ?
+         AND (s.location_type IS NULL OR s.location_type = '' OR s.location_type = '0')`;
+
+      if (routes.length) {
+        sql += ` AND r.route_short_name IN (${routes.map(() => "?").join(",")})`;
+        params.push(...routes);
+      }
+
+      sql += ` GROUP BY s.stop_id, s.stop_code, s.stop_name, s.platform_code, s.stop_lat, s.stop_lon
+               ORDER BY s.stop_name`;
+    }
+
+    const stops = db.prepare(sql).all(...params).map(stop => ({
+      id: stop.stop_id,
+      code: stop.stop_code,
+      name: stopDisplayName(stop),
+      latitude: stop.stop_lat,
+      longitude: stop.stop_lon,
+      routes: stop.route_names ? stop.route_names.split(",").filter(Boolean).sort() : []
+    }));
+
+    res.json(stops);
+  } catch (err) {
+    console.error(err);
+    res.status(500);
+    res.json(err);
+  }
+});
+
+app.get("/stop-times", async (req, res) => {
+  try {
+    if (!req.query.stopId) {
+      res.status(400);
+      return res.send("Need 'stopId'");
+    }
+    if (!hasScheduleCalendar) {
+      res.status(503);
+      return res.json({ error: "Schedule calendar data is missing. Rebuild the GTFS database with npm run db:build." });
+    }
+
+    const selectedDateTime = parseDateTimeQuery(req.query);
+    if (!selectedDateTime) {
+      res.status(400);
+      return res.send("Invalid date or time");
+    }
+
+    const routes = splitCsvParam(req.query.routes);
+    const requestedWindow = Number.parseInt(req.query.windowMins, 10);
+    const windowMinutes = Number.isFinite(requestedWindow) && requestedWindow > 0 ? Math.min(requestedWindow, 12 * 60) : DEFAULT_STOP_WINDOW_MINUTES;
+    const stop = db.prepare(
+      `SELECT stop_id, stop_code, stop_name, platform_code
+       FROM stops
+       WHERE stop_id = ?`
+    ).get(req.query.stopId);
+
+    if (!stop) {
+      res.status(404);
+      return res.send("Stop not found");
+    }
+
+    const selectedMinutes = selectedDateTime.getHours() * 60 + selectedDateTime.getMinutes();
+    const scheduleWindowQueries = [
+      {
+        serviceDate: new Date(selectedDateTime.getTime() - 24 * 60 * 60 * 1000),
+        startMinutes: selectedMinutes + 24 * 60,
+        endMinutes: selectedMinutes + windowMinutes + 24 * 60
+      },
+      {
+        serviceDate: selectedDateTime,
+        startMinutes: selectedMinutes,
+        endMinutes: selectedMinutes + windowMinutes
+      }
+    ];
+
+    let services = [];
+    scheduleWindowQueries.forEach(query => {
+      services = services.concat(queryStopSchedule(req.query.stopId, routes, query.serviceDate, query.startMinutes, query.endMinutes));
+    });
+
+    const liveTrips = isSameLocalDate(selectedDateTime, new Date())
+      ? new Map((await cachedFeed()).vehicles.map(vehicle => [vehicle.tripId, vehicle]))
+      : new Map();
+
+    services = services
+      .map(service => {
+        const liveVehicle = liveTrips.get(service.tripId);
+        const liveDelay = liveVehicle && Number.isFinite(liveVehicle.delay) ? liveVehicle.delay : 0;
+        const expectedMinutes = liveVehicle ? service.scheduledMinutes + Math.round(liveDelay / 60) : null;
+
+        return {
+          route: service.route,
+          headsign: service.headsign,
+          scheduledTime: service.scheduledTime,
+          expectedTime: expectedMinutes === null ? null : formatDisplayTime(expectedMinutes),
+          delaySeconds: liveVehicle ? liveDelay : null,
+          live: Boolean(liveVehicle),
+          sortMinutes: service.scheduledMinutes
+        };
+      })
+      .sort((a, b) => a.sortMinutes - b.sortMinutes || a.route.localeCompare(b.route) || a.headsign.localeCompare(b.headsign))
+      .map(service => ({
+        route: service.route,
+        headsign: service.headsign,
+        scheduledTime: service.scheduledTime,
+        expectedTime: service.expectedTime,
+        delaySeconds: service.delaySeconds,
+        live: service.live
+      }));
+
+    res.json({
+      stop: {
+        id: stop.stop_id,
+        code: stop.stop_code,
+        name: stopDisplayName(stop)
+      },
+      services,
+      windowMinutes
+    });
   } catch (err) {
     console.error(err);
     res.status(500);
