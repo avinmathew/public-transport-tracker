@@ -28,6 +28,50 @@ body {
   text-align: center;
 }
 
+#user-location {
+  z-index: 700;
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #475569;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
+}
+
+#user-location svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+#user-location .location-toggle-dot {
+  fill: currentColor;
+  stroke: none;
+}
+
+#user-location.enabled {
+  background: #eff6ff;
+  color: #1a73e8;
+}
+
+#user-location:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: 2px;
+}
+
 #routes {
   z-index: 800;
   position: absolute;
@@ -357,6 +401,14 @@ path.shape.ferry {
   font-size: 0;
 }
 
+.user-location-accuracy {
+  pointer-events: none;
+}
+
+.user-location-dot {
+  pointer-events: none;
+}
+
 .leaflet-bar a.traffic-toggle {
   color: #808080;
 }
@@ -389,6 +441,11 @@ path.shape.ferry {
   #refresh {
     left: calc(50% - 56px);
     width: 112px;
+  }
+
+  #user-location {
+    top: 10px;
+    right: 10px;
   }
 
   #routes {

@@ -6,8 +6,16 @@ var LABEL_SHOW_ZOOM_LEVEL = 12;
 var STOP_WINDOW_MINUTES = 120;
 var STOP_PANEL_REFRESH_INTERVAL = 30000;
 var STOP_MARKER_RADIUS = 6;
+var USER_LOCATION_ACCURACY_FILL_OPACITY = 0.16;
+var USER_LOCATION_MOVE_DURATION = 0.75;
+var GEOLOCATION_OPTIONS = {
+  enableHighAccuracy: true,
+  timeout: 10000,
+  maximumAge: 5000
+};
 
 var $refreshStatus = document.getElementById("refresh");
+var $locationToggle = document.getElementById("user-location");
 var $stopPanelBackdrop = document.getElementById("stop-panel-backdrop");
 var $stopPanel = document.getElementById("stop-panel");
 var $stopPanelClose = document.getElementById("stop-panel-close");
@@ -27,6 +35,13 @@ var isFetchingStops = false;
 var stopRequestController = null;
 var stopTimesRequestController = null;
 var stopPanelRefreshHandle = null;
+var userLocationLayerGroup = null;
+var userLocationMarker = null;
+var userLocationAccuracyCircle = null;
+var isLocationTrackingEnabled = false;
+var isLocationMoveInProgress = false;
+var manualLocationOverridePending = false;
+var locationWatchId = null;
 
 function toDateTimeLocalValue(date) {
   return [
@@ -297,6 +312,111 @@ window.onresize = refreshRoutesPanel;
 
 var map = L.map("map", { attributionControl: false });
 
+function setLocationToggleState(isEnabled) {
+  isLocationTrackingEnabled = isEnabled;
+  $locationToggle.classList.toggle("enabled", isEnabled);
+  $locationToggle.setAttribute("aria-pressed", isEnabled ? "true" : "false");
+}
+
+function clearLocationWatch() {
+  if (locationWatchId !== null) {
+    navigator.geolocation.clearWatch(locationWatchId);
+    locationWatchId = null;
+  }
+}
+
+function renderUserLocation(position) {
+  var latlng = [position.coords.latitude, position.coords.longitude];
+  var accuracy = position.coords.accuracy;
+
+  if (!userLocationAccuracyCircle) {
+    userLocationAccuracyCircle = L.circle(latlng, {
+      className: "user-location-accuracy",
+      radius: accuracy,
+      color: "#1a73e8",
+      weight: 1.5,
+      opacity: 0.3,
+      fillColor: "#1a73e8",
+      fillOpacity: USER_LOCATION_ACCURACY_FILL_OPACITY
+    }).addTo(userLocationLayerGroup);
+  } else {
+    userLocationAccuracyCircle.setLatLng(latlng);
+    userLocationAccuracyCircle.setRadius(accuracy);
+  }
+
+  if (!userLocationMarker) {
+    userLocationMarker = L.circleMarker(latlng, {
+      className: "user-location-dot",
+      radius: 8,
+      color: "#ffffff",
+      weight: 3,
+      fillColor: "#1a73e8",
+      fillOpacity: 1
+    }).addTo(userLocationLayerGroup);
+  } else {
+    userLocationMarker.setLatLng(latlng);
+  }
+
+  userLocationAccuracyCircle.bringToBack();
+  userLocationMarker.bringToFront();
+}
+
+function followUserLocation(position) {
+  isLocationMoveInProgress = true;
+  map.flyTo([position.coords.latitude, position.coords.longitude], map.getZoom(), {
+    animate: true,
+    duration: USER_LOCATION_MOVE_DURATION,
+    easeLinearity: 0.25
+  });
+}
+
+function stopLocationTracking() {
+  clearLocationWatch();
+  manualLocationOverridePending = false;
+  isLocationMoveInProgress = false;
+  setLocationToggleState(false);
+}
+
+function handleTrackedLocationUpdate(position) {
+  renderUserLocation(position);
+  if (isLocationTrackingEnabled) {
+    followUserLocation(position);
+  }
+}
+
+function startLocationWatch() {
+  clearLocationWatch();
+  locationWatchId = navigator.geolocation.watchPosition(function (position) {
+    handleTrackedLocationUpdate(position);
+  }, function (error) {
+    if (error && error.code === error.PERMISSION_DENIED) {
+      stopLocationTracking();
+    }
+  }, GEOLOCATION_OPTIONS);
+}
+
+function enableLocationTracking() {
+  if (!navigator.geolocation) {
+    stopLocationTracking();
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(function (position) {
+    setLocationToggleState(true);
+    handleTrackedLocationUpdate(position);
+    startLocationWatch();
+  }, function () {
+    stopLocationTracking();
+  }, GEOLOCATION_OPTIONS);
+}
+
+function queueManualLocationOverride() {
+  if (!isLocationTrackingEnabled) {
+    return;
+  }
+  manualLocationOverridePending = true;
+}
+
 // Set map position
 if (search.lat && search.lng) {
   var zoom = search.z || DEFAULT_ZOOM;
@@ -304,13 +424,17 @@ if (search.lat && search.lng) {
 } else {
   map.setView([DEFAULT_LAT, DEFAULT_LNG], DEFAULT_ZOOM);
 }
-if (navigator.geolocation && !(search.lat && search.lng)) {
-  navigator.geolocation.getCurrentPosition(function (position) {
-    map.setView([position.coords.latitude, position.coords.longitude], DEFAULT_ZOOM);
-  });
-}
 
 map.on("moveend", function () {
+  var shouldStopTracking = isLocationTrackingEnabled && manualLocationOverridePending;
+
+  isLocationMoveInProgress = false;
+  manualLocationOverridePending = false;
+
+  if (shouldStopTracking) {
+    stopLocationTracking();
+  }
+
   var latlng = map.getCenter();
   var url = URI().setSearch({
     lat: latlng.lat.toFixed(LATLNG_DECIMAL_PLACES),
@@ -329,8 +453,22 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 var shapeGroup = L.layerGroup().addTo(map);
 var layerGroup = L.layerGroup().addTo(map);
 var stopLayerGroup = L.layerGroup().addTo(map);
+userLocationLayerGroup = L.layerGroup().addTo(map);
 
 var vehicleLayerLookup = {};
+
+map.getContainer().addEventListener("mousedown", queueManualLocationOverride, { passive: true });
+map.getContainer().addEventListener("touchstart", queueManualLocationOverride, { passive: true });
+map.getContainer().addEventListener("wheel", queueManualLocationOverride, { passive: true });
+
+$locationToggle.onclick = function () {
+  if (isLocationTrackingEnabled) {
+    stopLocationTracking();
+    return;
+  }
+
+  enableLocationTracking();
+};
 
 map.on("zoom", toggleLabels);
 
