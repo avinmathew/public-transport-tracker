@@ -18,11 +18,21 @@ const DEFAULT_FEED_FILTER_TIME = 2; // minutes
 const DEFAULT_STOP_WINDOW_MINUTES = 120;
 
 const DB_PATH = process.env.DB_PATH || fileURLToPath(new URL('./db/gtfs.sqlite', import.meta.url));
+const GTFS_TIMEZONE = process.env.GTFS_TIMEZONE || "Australia/Brisbane";
 const db = new DatabaseSync(DB_PATH);
 const dbTables = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map(row => row.name));
 const hasScheduleCalendar = dbTables.has("calendar") && dbTables.has("calendar_dates");
 const hasStopRoutes = dbTables.has("stop_routes");
 const activeServiceIdsCache = new Map();
+const transitNowFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: GTFS_TIMEZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23"
+});
 
 function splitCsvParam(value) {
   if (!value) {
@@ -34,23 +44,69 @@ function splitCsvParam(value) {
     .filter(Boolean);
 }
 
+function createWallClockDate(year, month, day, hours, minutes) {
+  const value = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0, 0));
+  if (value.getUTCFullYear() !== year
+      || value.getUTCMonth() !== month - 1
+      || value.getUTCDate() !== day
+      || value.getUTCHours() !== hours
+      || value.getUTCMinutes() !== minutes) {
+    return null;
+  }
+  return value;
+}
+
+function parseWallClockDateTime(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::\d{2})?$/);
+  if (!match) {
+    return null;
+  }
+
+  return createWallClockDate(
+    Number.parseInt(match[1], 10),
+    Number.parseInt(match[2], 10),
+    Number.parseInt(match[3], 10),
+    Number.parseInt(match[4], 10),
+    Number.parseInt(match[5], 10)
+  );
+}
+
+function getCurrentTransitDateTime() {
+  const parts = transitNowFormatter.formatToParts(new Date()).reduce((acc, part) => {
+    if (part.type !== "literal") {
+      acc[part.type] = part.value;
+    }
+    return acc;
+  }, {});
+
+  return createWallClockDate(
+    Number.parseInt(parts.year, 10),
+    Number.parseInt(parts.month, 10),
+    Number.parseInt(parts.day, 10),
+    Number.parseInt(parts.hour, 10),
+    Number.parseInt(parts.minute, 10)
+  );
+}
+
 function formatServiceDate(date) {
-  return `${date.getFullYear()}${padLeft(date.getMonth() + 1, "0", 2)}${padLeft(date.getDate(), "0", 2)}`;
+  return `${date.getUTCFullYear()}${padLeft(date.getUTCMonth() + 1, "0", 2)}${padLeft(date.getUTCDate(), "0", 2)}`;
 }
 
 function parseDateTimeQuery(query) {
-  const now = new Date();
+  const now = getCurrentTransitDateTime();
 
   if (query.dateTime) {
-    const selected = new Date(query.dateTime);
-    return Number.isNaN(selected.getTime()) ? null : selected;
+    return parseWallClockDateTime(query.dateTime);
   }
 
   if (query.date || query.time) {
-    const date = query.date || `${now.getFullYear()}-${padLeft(now.getMonth() + 1, "0", 2)}-${padLeft(now.getDate(), "0", 2)}`;
-    const time = query.time || `${padLeft(now.getHours(), "0", 2)}:${padLeft(now.getMinutes(), "0", 2)}`;
-    const selected = new Date(`${date}T${time}`);
-    return Number.isNaN(selected.getTime()) ? null : selected;
+    const date = query.date || `${now.getUTCFullYear()}-${padLeft(now.getUTCMonth() + 1, "0", 2)}-${padLeft(now.getUTCDate(), "0", 2)}`;
+    const time = query.time || `${padLeft(now.getUTCHours(), "0", 2)}:${padLeft(now.getUTCMinutes(), "0", 2)}`;
+    return parseWallClockDateTime(`${date}T${time}`);
   }
 
   return now;
@@ -101,9 +157,9 @@ function stopDisplayName(stop) {
 }
 
 function isSameLocalDate(a, b) {
-  return a.getFullYear() === b.getFullYear()
-    && a.getMonth() === b.getMonth()
-    && a.getDate() === b.getDate();
+  return a.getUTCFullYear() === b.getUTCFullYear()
+    && a.getUTCMonth() === b.getUTCMonth()
+    && a.getUTCDate() === b.getUTCDate();
 }
 
 function getActiveServiceIds(serviceDate) {
@@ -116,7 +172,7 @@ function getActiveServiceIds(serviceDate) {
     return activeServiceIdsCache.get(serviceDateKey);
   }
 
-  const dayColumn = DAY_COLUMN_LOOKUP[serviceDate.getDay()];
+  const dayColumn = DAY_COLUMN_LOOKUP[serviceDate.getUTCDay()];
   const regularRows = db.prepare(
     `SELECT service_id
      FROM calendar
@@ -372,7 +428,7 @@ app.get("/stop-times", async (req, res) => {
       return res.send("Stop not found");
     }
 
-    const selectedMinutes = selectedDateTime.getHours() * 60 + selectedDateTime.getMinutes();
+    const selectedMinutes = selectedDateTime.getUTCHours() * 60 + selectedDateTime.getUTCMinutes();
     const scheduleWindowQueries = [
       {
         serviceDate: new Date(selectedDateTime.getTime() - 24 * 60 * 60 * 1000),
@@ -391,7 +447,7 @@ app.get("/stop-times", async (req, res) => {
       services = services.concat(queryStopSchedule(req.query.stopId, routes, query.serviceDate, query.startMinutes, query.endMinutes));
     });
 
-    const liveTrips = isSameLocalDate(selectedDateTime, new Date())
+    const liveTrips = isSameLocalDate(selectedDateTime, getCurrentTransitDateTime())
       ? new Map((await cachedFeed()).vehicles.map(vehicle => [vehicle.tripId, vehicle]))
       : new Map();
 

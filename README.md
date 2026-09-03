@@ -30,6 +30,7 @@ Environment variables can either be supplied via command line or put in a `.env`
 
 * `GTFS_REALTIME_URL`: GTFS Realtime URL, e.g. `https://gtfsrt.api.translink.com.au/api/realtime/SEQ/VehiclePositions`
 * `DB_PATH`: Path to the SQLite database file. Defaults to `db/gtfs.sqlite` relative to the project root.
+* `GTFS_TIMEZONE`: IANA timezone used for timetable lookups. Defaults to `Australia/Brisbane`.
 * `GTFS_URL`: GTFS static zip URL used by `npm run db:build`. Defaults to the Translink SEQ feed.
 * `PORT`: Port to run the Node.js server on. Defaults to `3000`.
 
